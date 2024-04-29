@@ -1,6 +1,6 @@
 #define DUCKDB_EXTENSION_MAIN
 
-#include "quack_extension.hpp"
+#include "ros_extension.hpp"
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/string_util.hpp"
@@ -12,6 +12,10 @@
 #include <openssl/opensslv.h>
 
 namespace duckdb {
+
+inline void RosLoadBag(DataChunk &args, ExpressionState& state, Vector &result)
+
+
 
 inline void QuackScalarFun(DataChunk &args, ExpressionState &state, Vector &result) {
     auto &name_vector = args.data[0];
@@ -44,10 +48,10 @@ static void LoadInternal(DatabaseInstance &instance) {
     ExtensionUtil::RegisterFunction(instance, quack_openssl_version_scalar_function);
 }
 
-void QuackExtension::Load(DuckDB &db) {
+void RosExtension::Load(DuckDB &db) {
 	LoadInternal(*db.instance);
 }
-std::string QuackExtension::Name() {
+std::string RosExtension::Name() {
 	return "quack";
 }
 
@@ -55,12 +59,12 @@ std::string QuackExtension::Name() {
 
 extern "C" {
 
-DUCKDB_EXTENSION_API void quack_init(duckdb::DatabaseInstance &db) {
+DUCKDB_EXTENSION_API void ros_init(duckdb::DatabaseInstance &db) {
     duckdb::DuckDB db_wrapper(db);
     db_wrapper.LoadExtension<duckdb::QuackExtension>();
 }
 
-DUCKDB_EXTENSION_API const char *quack_version() {
+DUCKDB_EXTENSION_API const char *ros_version() {
 	return duckdb::DuckDB::LibraryVersion();
 }
 }
