@@ -10,10 +10,10 @@
 #include <boost/iostreams/device/mapped_file.hpp>
 #include <boost/variant.hpp>
 
-#include "ros_value.h"
-#include "ros_bag_types.h"
-#include "ros_msg_types.h"
-#include "util.h"
+#include "ros_value.hpp"
+#include "ros_bag_types.hpp"
+#include "ros_msg_types.hpp"
+#include "util.hpp"
 
 namespace Embag {
 

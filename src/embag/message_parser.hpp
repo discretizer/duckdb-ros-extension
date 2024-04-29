@@ -2,11 +2,11 @@
 
 #include <unordered_map>
 
-#include "ros_value.h"
-#include "ros_bag_types.h"
-#include "ros_msg_types.h"
+#include "ros_value.hpp"
+#include "ros_bag_types.hpp"
+#include "ros_msg_types.hpp"
 #include "span.hpp"
-#include "util.h"
+#include "util.hpp"
 
 namespace Embag {
 class MessageParser {

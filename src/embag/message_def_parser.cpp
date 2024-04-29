@@ -1,4 +1,4 @@
-#include "message_def_parser.h"
+#include "message_def_parser.hpp"
 
 #include <boost/spirit/include/qi.hpp>
 #include <boost/fusion/include/adapt_struct.hpp>

@@ -4,8 +4,8 @@
 
 #include <boost/optional.hpp>
 
-#include "message_parser.h"
-#include "util.h"
+#include "message_parser.hpp"
+#include "util.hpp"
 
 namespace Embag {
 

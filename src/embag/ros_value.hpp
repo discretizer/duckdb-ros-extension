@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "span.hpp"
-#include "util.h"
+#include "util.hpp"
 
 namespace Embag {
 

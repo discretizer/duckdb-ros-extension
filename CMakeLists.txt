@@ -8,13 +8,23 @@ set(TARGET_NAME ros)
 # Note that it should also be removed from vcpkg.json to prevent needlessly installing it..
 find_package(OpenSSL REQUIRED)
 
+set(Boost_USE_STATIC_LIBS ON)
+find_package(Boost COMPONENTS iostreams REQUIRED)
+
 set(EXTENSION_NAME ${TARGET_NAME}_extension)
 set(LOADABLE_EXTENSION_NAME ${TARGET_NAME}_loadable_extension)
 
 project(${TARGET_NAME})
 include_directories(src/include)
 
-set(EXTENSION_SOURCES src/ros_extension.cpp)
+set(EXTENSION_SOURCES 
+  src/embag/embag.cpp
+  src/embag/message_def_parser.cpp
+  src/embag/message_parser.cpp
+  src/embag/ros_value.cpp
+  src/embag/view.cpp
+  src/ros_extension.cpp
+)
 
 build_static_extension(${TARGET_NAME} ${EXTENSION_SOURCES})
 build_loadable_extension(${TARGET_NAME} " " ${EXTENSION_SOURCES})
@@ -22,6 +32,10 @@ build_loadable_extension(${TARGET_NAME} " " ${EXTENSION_SOURCES})
 # Link OpenSSL in both the static library as the loadable extension
 target_link_libraries(${EXTENSION_NAME} OpenSSL::SSL OpenSSL::Crypto)
 target_link_libraries(${LOADABLE_EXTENSION_NAME} OpenSSL::SSL OpenSSL::Crypto)
+
+# Link boost in both the static library and the loada extension 
+target_link_libraries(${ENTENSION_NAME} Boost::iostreams )
+target_link_libraries(${LOADABLE_ENTENSION_NAME} Boost::iostreams )
 
 install(
   TARGETS ${EXTENSION_NAME}

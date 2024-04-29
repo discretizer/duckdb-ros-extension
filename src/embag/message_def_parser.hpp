@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ros_msg_types.h"
+#include "ros_msg_types.hpp"
 
 namespace Embag {
 

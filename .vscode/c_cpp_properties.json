@@ -19,7 +19,7 @@
             "name" : "Linux-x64", 
             "includePath": [
                 "${workspaceFolder}/**",
-                "${workspaceFolder}/build/vcpkg_installed/x64-linux/include"
+                "${workspaceFolder}/build/release/vcpkg_installed/x64-linux/include"
             ],
             "defines": [],
             "cStandard": "c17",
