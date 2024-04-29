@@ -1,6 +1,7 @@
 {
   "dependencies": [
     "openssl", 
-    "boost-variant"
+    "boost-variant",
+    "boost-iostreams"
   ]
 }
