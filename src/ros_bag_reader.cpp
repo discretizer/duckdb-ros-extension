@@ -165,10 +165,11 @@ LoadMetadata(Allocator &allocator, FileHandle &file_handle) {
         chunk.info = info;
         metadata->chunks.push_back(chunk);
     }
-  }
+    return make_shared_ptr<RosBagMetadataCache>(std::move(metadata), current_time);
+}
 
-
-
+LogicalType ParquetReader::DeriveLogicalType() {
+    
 }
 
 RosBagReader::RosBagReader(ClientContext& context, RosOptions options, string file_name) {

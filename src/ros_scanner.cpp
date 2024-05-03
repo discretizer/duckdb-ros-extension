@@ -15,7 +15,6 @@ struct RosGlobalState;
 
 struct RosLocalState : public LocalTableFunctionState {
 	shared_ptr<RosBagReader> reader;
-	RosBagReaderScanState scan_state;
 	bool is_parallel;
 	idx_t batch_index;
 	idx_t file_index;
@@ -53,32 +52,23 @@ struct RosGlobalState : public GlobalTableFunctionState {
 }; 
 
 
-class RosScan
-
 struct RosBindData : public TableFunctionData {
-	shared_ptr<RosReader> initial_reader;
+	shared_ptr<RosBagReader> initial_reader;
 
 	vector<string> files;
-	atomic<idx_t> chunk_count;
 	vector<string> names;
 	vector<LogicalType> types;
 
 	// The union readers are created (when parquet union_by_name option is on) during binding
 	// Those readers can be re-used during ParquetParallelStateNext
-	vector<shared_ptr<RosReader>> union_readers;
+	vector<shared_ptr<RosBagReader>> union_readers;
 
-	// These come from the initial_reader, but need to be stored in case the initial_reader is removed by a filter
-	idx_t initial_file_cardinality;
-	idx_t initial_file_row_groups;
-
-	RosOptions parquet_options;
+	RosOptions ros_options;
 	MultiFileReaderBindData reader_bind;
 
-	void Initialize(shared_ptr<RosReader> reader) {
+	void Initialize(shared_ptr<RosBagReader> reader) {
 		initial_reader = std::move(reader);
-		initial_file_cardinality = initial_reader->NumRows();
-		initial_file_row_groups = initial_reader->NumRowGroups();
-		parquet_options = initial_reader->parquet_options;
+		ros_options = initial_reader->ros_options;
 	}
 };
 

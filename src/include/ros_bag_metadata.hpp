@@ -48,12 +48,12 @@ public:
 
 	~RosBagMetadataCache() override = default;
 
-	//! Parquet file metadata
+	//! Ros Bag metadata
 	unique_ptr<const RosBagMetadata> metadata;
 
 	//! read time
 	time_t read_time;
-
+	
 public:
 	static string ObjectType() {
 		return "ros_bag_metadata";

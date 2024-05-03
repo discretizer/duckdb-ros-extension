@@ -7,6 +7,8 @@
 #include <duckdb/common/unordered_set.hpp>
 #include <duckdb/common/vector.hpp>
 #include <duckdb/common/helper.hpp>
+#include <duckdb/common/multi_file_reader.hpp>
+#include <duckdb/common/multi_file_reader_options.hpp>
 
 #include <duckdb/main/client_context.hpp>
 #endif 
@@ -40,10 +42,31 @@ const RosMsgTypes::primitive_type_map_t RosMsgTypes::FieldDef::primitive_type_ma
 
 class RosBagMetadata;
 
+struct RosOptions {
+    explicit RosOptions() {
+    }
+    explicit RosOptions(ClientContext &context);
+
+    string topic; 
+    bool decode_message;  
+
+    MultiFileReaderOptions file_options;
+public: 
+    void Serialize(Serializer &serializer); 
+    static RosOptions Deserialize(Deserializer& deserializer); 
+}; 
+
 class RosBagReader {
 public: 
     RosBagReader(ClientContext &context, RosOptions options, string file_name);
-    
+    RosBagReader(ClientContext &context, RosOptions parquet_options, shared_ptr<RosBagMetadataCache> metadata);
+
+    ~RosBagReader(); 
+
+    shared_ptr<RosBagMetadataCache> metadata;
+	RosOptions ros_options;
+	MultiFileReaderData reader_data;
+
     shared_ptr<RosMsgTypes::MsgDef> MsgDefForTopic(const std::string &topic) const {
         const auto it = message_schemata.find(topic);
         if (it == message_schemata.end()) {

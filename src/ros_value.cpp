@@ -3,7 +3,7 @@
 
 #include "ros_value.hpp"
 
-namespace Embag {
+namespace duckdb {
 
 const RosValue::Pointer RosValue::ros_value_list_t::at(size_t index) const {
   if (index >= length) {
