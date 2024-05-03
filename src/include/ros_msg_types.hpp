@@ -1,26 +1,27 @@
 #pragma once
 
-#include <unordered_map>
+#include <duckdb/common/unordered_map.hpp>
 
 #include "ros_value.hpp"
 
-namespace Embag {
+namespace duckdb {
+
 class RosMsgTypes{
  public:
   class EmbeddedMsgDef;
 
   // Schema stuff
   // TODO: move this stuff elsewhere?
-  typedef std::unordered_map<std::string, const RosValue::Type> primitive_type_map_t;
+  typedef unordered_map<string, const RosValue::Type> primitive_type_map_t;
   class FieldDef {
    public:
     const static primitive_type_map_t primitive_type_map;
     static size_t typeToSize(const RosValue::Type type);
 
     struct parseable_info_t {
-      std::string type_name;
+      string type_name;
       int32_t array_size;
-      std::string field_name;
+      string field_name;
     };
 
     FieldDef(parseable_info_t parsed_info)
@@ -38,7 +39,7 @@ class RosMsgTypes{
       }
     }
 
-    const std::string& typeName() const {
+    const string& typeName() const {
       return parsed_info_.type_name;
     }
 
@@ -46,7 +47,7 @@ class RosMsgTypes{
       return parsed_info_.array_size;
     }
 
-    const std::string& name() const {
+    const string& name() const {
       return parsed_info_.field_name;
     }
 
@@ -62,7 +63,7 @@ class RosMsgTypes{
       return type_size_;
     }
 
-    void setTypeDefinition(const std::unordered_map<std::string, EmbeddedMsgDef> &definition_map, const std::string &scope) {
+    void setTypeDefinition(const unordered_map<string, EmbeddedMsgDef> &definition_map, const string &scope) {
       if (type_ != RosValue::Type::object) {
         throw std::runtime_error("Cannnot set the typeDefinition for non-object types");
       }
@@ -105,9 +106,9 @@ class RosMsgTypes{
   };
 
   struct ConstantDef {
-    std::string type_name;
-    std::string constant_name;
-    std::string value;
+    string type_name;
+    string constant_name;
+    string value;
   };
 
   typedef boost::variant<FieldDef, ConstantDef> MemberDef;
@@ -116,10 +117,10 @@ class RosMsgTypes{
   class BaseMsgDef {
    public:
     struct parseable_info_t {
-      std::vector<member_parseable_info_t> members;
+      vector<member_parseable_info_t> members;
     };
 
-    BaseMsgDef(const parseable_info_t& parsed_info, const std::string& name)
+    BaseMsgDef(const parseable_info_t& parsed_info, const string& name)
       : name_(name)
     {
       size_t num_fields = 0;

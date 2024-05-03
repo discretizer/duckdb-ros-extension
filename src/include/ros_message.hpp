@@ -1,14 +1,14 @@
 #pragma once
 
-#include <string>
+#include <duckdb/common/string.hpp>
 
 #include "ros_value.hpp"
 #include "message_parser.hpp"
 #include "ros_msg_types.hpp"
 #include "span.hpp"
-#include "util.hpp"
 
-namespace Embag {
+namespace duckdb {
+
 class RosMessage {
  public:
   std::string topic;

@@ -1,23 +1,29 @@
 #pragma once
 
 #include <cstring>
-#include <string>
-#include <unordered_map>
-#include <vector>
+
+#include "duckdb.hpp"
+#ifndef DUCKDB_AMALGAMATION
+#include <duckdb/common/string.hpp>
+#include <duckdb/common/unordered_map.hpp>
+#include <duckdb/common/vector.hpp>
+#endif
+
 #include <bzlib.h>
 
 #include "ros_value.hpp"
 #include "decompression.hpp"
 
-namespace Embag {
+namespace duckdb {
+
 struct RosBagTypes {
   struct connection_data_t {
-    std::string topic;
-    std::string type;
-    std::string scope;
-    std::string md5sum;
-    std::string message_definition;
-    std::string callerid;
+    string topic;
+    string type;
+    string scope;
+    string md5sum;
+    string message_definition;
+    string callerid;
     bool latching = false;
     size_t message_count = 0;
 
@@ -37,31 +43,15 @@ struct RosBagTypes {
     const char *data;
   };
 
-  struct header_t {
-    std::unique_ptr<std::unordered_map<std::string, std::string>> fields;
 
-    enum class op {
-      BAG_HEADER = 0x03,
-      CHUNK = 0x05,
-      CONNECTION = 0x07,
-      MESSAGE_DATA = 0x02,
-      INDEX_DATA = 0x04,
-      CHUNK_INFO = 0x06,
-      UNSET = 0xff,
-    };
-
-    op getOp() const {
-      return header_t::op(*(fields->at("op").data()));
-    }
-
-    void getField(const std::string &name, std::string &value) const {
-      value = fields->at(name);
-    }
-
-    template<typename T>
-    void getField(const std::string &name, T &value) const {
-      value = *reinterpret_cast<const T *>(fields->at(name).data());
-    }
+  enum class op {
+    BAG_HEADER = 0x03,
+    CHUNK = 0x05,
+    CONNECTION = 0x07,
+    MESSAGE_DATA = 0x02,
+    INDEX_DATA = 0x04,
+    CHUNK_INFO = 0x06,
+    UNSET = 0xff,
   };
 
   struct chunk_info_t {
@@ -75,33 +65,30 @@ struct RosBagTypes {
   struct chunk_t {
     uint64_t offset = 0;
     chunk_info_t info;
-    std::string compression;
+    string compression;
     uint32_t uncompressed_size = 0;
-    record_t record{};
+    uint32_t header_len = 0; 
+    uint32_t data_len = 0; 
 
-    explicit chunk_t(record_t r) {
-      record = r;
-    };
-
-    void decompress(char *dst) const {
+    void decompress(const char* src, char *dst) const {
       if (compression == "lz4") {
-        decompressLz4Chunk(dst);
+        decompressLz4Chunk(src, dst);
       } else if (compression == "bz2") {
-        decompressBz2Chunk(dst);
+        decompressBz2Chunk(src, dst);
       } else if (compression == "none") {
-        memcpy(dst, record.data, uncompressed_size);
+        memcpy(dst, src, uncompressed_size);
       }
     }
 
-    void decompressLz4Chunk(char *dst) const {
-      size_t src_bytes_left = record.data_len;
+    void decompressLz4Chunk(const char* src, char *dst) const {
+      size_t src_bytes_left = data_len;
       size_t dst_bytes_left = uncompressed_size;
 
       while (dst_bytes_left && src_bytes_left) {
         size_t src_bytes_read = src_bytes_left;
         size_t dst_bytes_written = dst_bytes_left;
         auto& lz4_ctx = Lz4DecompressionCtx::getInstance();
-        const size_t ret = LZ4F_decompress(lz4_ctx.context(), dst, &dst_bytes_written, record.data, &src_bytes_read, nullptr);
+        const size_t ret = LZ4F_decompress(lz4_ctx.context(), dst, &dst_bytes_written, src, &src_bytes_read, nullptr);
         if (LZ4F_isError(ret)) {
           throw std::runtime_error("chunk::decompress: lz4 decompression returned " + std::to_string(ret) + ", expected "
                                        + std::to_string(src_bytes_read));
@@ -117,24 +104,20 @@ struct RosBagTypes {
       }
     };
 
-    void decompressBz2Chunk(char *dst) const {
+    void decompressBz2Chunk(const char* src, char *dst) const {
       unsigned int dst_bytes_left = uncompressed_size;
-      char * source = const_cast<char *>(record.data);
-      const auto r = BZ2_bzBuffToBuffDecompress(dst, &dst_bytes_left, source, record.data_len, 0,0);
+      char * source = const_cast<char *>(src);
+      const auto r = BZ2_bzBuffToBuffDecompress(dst, &dst_bytes_left, source, data_len, 0,0);
       if (r != BZ_OK) {
         throw std::runtime_error("Failed decompress bz2 chunk, bz2 error code: " + std::to_string(r));
       }
     }
   };
 
-  struct index_block_t {
-    chunk_t *into_chunk;
-  };
-
   struct connection_record_t {
     uint32_t id;
-    std::vector<index_block_t> blocks;
-    std::string topic;
+    vector<chunk_t&> blocks;
+    string topic;
     connection_data_t data;
   };
 };

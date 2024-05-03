@@ -6,32 +6,32 @@
 
 // Parser structures and binding - must exist in global namespace
 BOOST_FUSION_ADAPT_STRUCT(
-    Embag::RosMsgTypes::FieldDef::parseable_info_t,
+    duckdb::RosMsgTypes::FieldDef::parseable_info_t,
     type_name,
     array_size,
     field_name,
 )
 
 BOOST_FUSION_ADAPT_STRUCT(
-    Embag::RosMsgTypes::ConstantDef,
+    duckdb::RosMsgTypes::ConstantDef,
     type_name,
     constant_name,
     value,
 )
 
 BOOST_FUSION_ADAPT_STRUCT(
-    Embag::RosMsgTypes::EmbeddedMsgDef::parseable_info_t,
+    duckdb::RosMsgTypes::EmbeddedMsgDef::parseable_info_t,
     type_name,
     members,
 )
 
 BOOST_FUSION_ADAPT_STRUCT(
-    Embag::RosMsgTypes::MsgDef::parseable_info_t,
+    duckdb::RosMsgTypes::MsgDef::parseable_info_t,
     members,
     embedded_definitions,
 )
 
-namespace Embag {
+namespace duckdb {
 
 namespace qi = boost::spirit::qi;
 // A parser for all the things we don't care about (aka a skipper)
@@ -111,12 +111,12 @@ struct ros_msg_grammar : qi::grammar<Iterator, RosMsgTypes::MsgDef::parseable_in
   qi::rule<Iterator, RosMsgTypes::member_parseable_info_t(), Skipper> member;
 };
 
-std::shared_ptr<RosMsgTypes::MsgDef> parseMsgDef(const std::string &def, const std::string& name) {
-  std::string::const_iterator iter = def.begin();
-  const std::string::const_iterator end = def.end();
+std::shared_ptr<RosMsgTypes::MsgDef> ParseMsgDef(const string &def, const string& name) {
+  string::const_iterator iter = def.begin();
+  const string::const_iterator end = def.end();
 
-  const ros_msg_grammar<std::string::const_iterator> grammar;
-  const ros_msg_skipper<std::string::const_iterator> skipper;
+  const ros_msg_grammar<string::const_iterator> grammar;
+  const ros_msg_skipper<string::const_iterator> skipper;
 
   RosMsgTypes::MsgDef::parseable_info_t ast;
   const bool r = phrase_parse(iter, end, grammar, skipper, ast);
@@ -125,8 +125,8 @@ std::shared_ptr<RosMsgTypes::MsgDef> parseMsgDef(const std::string &def, const s
     return std::make_shared<RosMsgTypes::MsgDef>(ast, name);
   }
 
-  const std::string::const_iterator some = iter + std::min(30, int(end - iter));
-  const std::string context(iter, (some > end) ? end : some);
+  const string::const_iterator some = iter + std::min(30, int(end - iter));
+  const string context(iter, (some > end) ? end : some);
 
   throw std::runtime_error("Message definition parsing failed at: " + context);
 }

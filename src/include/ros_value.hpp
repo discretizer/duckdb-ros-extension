@@ -1,24 +1,25 @@
 #pragma once
 
-#include <boost/variant.hpp>
 #include <cstdint>
 #include <cstring>
-#include <memory>
-#include <string>
-#include <unordered_map>
-#include <vector>
+
+#include <duckdb/common/string.hpp>
+#include <duckdb/common/unordered_map.hpp>
+#include <duckdb/common/vector.hpp>
+#include <duckdb/common/pair.hpp>
+
+#include <boost/variant.hpp>
 
 #include "span.hpp"
-#include "util.hpp"
 
-namespace Embag {
+namespace duckdb {
 
 class RosValue {
  public:
   class Pointer;
 
   struct ros_value_list_t {
-    std::weak_ptr<std::vector<RosValue>> base;
+    weak_ptr<vector<RosValue>> base;
     size_t offset;
     size_t length;
 
@@ -47,7 +48,7 @@ class RosValue {
     primitive_array,
   };
   static size_t primitiveTypeToSize(const Type type);
-  static std::string primitiveTypeToFormat(const Type type);
+  static string primitiveTypeToFormat(const Type type);
 
  private:
   template<class ChildType>
@@ -202,7 +203,7 @@ class RosValue {
  private:
   struct _array_identifier {};
  public:
-  RosValue(const Type type, const std::shared_ptr<std::vector<char>>& message_buffer, const size_t offset)
+  RosValue(const Type type, const shared_ptr<vector<char>>& message_buffer, const size_t offset)
     : type_(type)
     , primitive_info_({ offset, message_buffer })
   {
@@ -218,7 +219,7 @@ class RosValue {
       throw std::runtime_error("Cannot create an object or array with this constructor");
     }
   }
-  RosValue(const std::shared_ptr<std::unordered_map<std::string, size_t>>& field_indexes)
+  RosValue(const shared_ptr<unordered_map<string, size_t>>& field_indexes)
     : type_(Type::object)
     , object_info_()
   {
@@ -229,7 +230,7 @@ class RosValue {
     , array_info_()
   {
   }
-  RosValue(const Type element_type, const std::shared_ptr<std::vector<char>>& message_buffer)
+  RosValue(const Type element_type, const shared_ptr<vector<char>>& message_buffer)
     : type_(Type::primitive_array)
     , primitive_array_info_(element_type, message_buffer)
   {
@@ -287,12 +288,12 @@ class RosValue {
   const Pointer operator()(const std::string &key) const;
   const Pointer operator[](const std::string &key) const;
   const Pointer operator[](const size_t idx) const;
-  const Pointer get(const std::string &key) const;
+  const Pointer get(const string &key) const;
   const Pointer at(size_t idx) const;
-  const Pointer at(const std::string &key) const;
+  const Pointer at(const string &key) const;
 
   template<typename T>
-  const T &getValue(const std::string &key) const;
+  const T &getValue(const string &key) const;
 
   template<typename T>
   const T as() const {
@@ -328,11 +329,11 @@ class RosValue {
   const void* getPrimitiveArrayRosValueBuffer() const;
   size_t getPrimitiveArrayRosValueBufferSize() const;
 
-  std::unordered_map<std::string, Pointer> getObjects() const;
-  std::vector<Pointer> getValues() const;
+  unordered_map<string, Pointer> getObjects() const;
+  vector<Pointer> getValues() const;
 
-  std::string toString(const std::string &path = "") const;
-  void print(const std::string &path = "") const;
+  string toString(const string &path = "") const;
+  void print(const string &path = "") const;
 
   // Used for accessor template resolution
   template<typename T>
@@ -340,12 +341,12 @@ class RosValue {
 
  private:
   struct primitive_info_t {
-    size_t offset;
-    std::shared_ptr<std::vector<char>> message_buffer;
+    size_t offset; 
+    shared_ptr<vector<char>> message_buffer;
   };
 
   struct primitive_array_info_t {
-    primitive_array_info_t(const Type element_type, const std::shared_ptr<std::vector<char>>& message_buffer)
+    primitive_array_info_t(const Type element_type, const shared_ptr<vector<char>>& message_buffer)
       : element_type(element_type)
       , message_buffer(message_buffer)
     {
@@ -354,7 +355,7 @@ class RosValue {
     Type element_type;
     size_t offset;
     size_t length;
-    std::shared_ptr<std::vector<char>> message_buffer;
+    shared_ptr<vector<char>> message_buffer;
   };
 
   struct array_info_t {
@@ -363,7 +364,7 @@ class RosValue {
 
   struct object_info_t {
     ros_value_list_t children;
-    std::shared_ptr<std::unordered_map<std::string, size_t>> field_indexes;
+    shared_ptr<unordered_map<string, size_t>> field_indexes;
   };
 
   Type type_;
@@ -396,7 +397,7 @@ class RosValue {
 class RosValue::Pointer {
  private:
   struct vector_based_value_info_t {
-    std::shared_ptr<std::vector<RosValue>> base;
+    shared_ptr<vector<RosValue>> base;
     size_t index;
   };
   boost::variant<RosValue, vector_based_value_info_t> info_;
@@ -407,31 +408,31 @@ class RosValue::Pointer {
   {
   }
 
-  Pointer(const std::weak_ptr<std::vector<RosValue>>& base)
+  Pointer(const std::weak_ptr<vector<RosValue>>& base)
     : Pointer(base, 0)
   {
   }
 
-  Pointer(const std::weak_ptr<std::vector<RosValue>>& base, size_t index)
+  Pointer(const std::weak_ptr<vector<RosValue>>& base, size_t index)
     : Pointer(base.lock(), index)
   {
   }
 
-  Pointer(const std::shared_ptr<std::vector<RosValue>>& base, size_t index)
+  Pointer(const shared_ptr<vector<RosValue>>& base, size_t index)
     : info_(vector_based_value_info_t({base, index}))
   {
   }
 
-  Pointer(const RosValue::Type type, const std::shared_ptr<std::vector<char>>& message_buffer, const size_t offset)
+  Pointer(const RosValue::Type type, const shared_ptr<vector<char>>& message_buffer, const size_t offset)
     : info_(RosValue(type, message_buffer, offset))
   {
   }
 
-  const Pointer operator()(const std::string &key) const {
+  const Pointer operator()(const string &key) const {
     return (**this)(key);
   }
 
-  const Pointer operator[](const std::string &key) const {
+  const Pointer operator[](const string &key) const {
     return (**this)[key];
   }
 
@@ -455,12 +456,12 @@ class RosValue::Pointer {
 };
 
 template<>
-const std::string RosValue::as<std::string>() const;
+const string RosValue::as<std::string>() const;
 
 template<>
-const std::string& RosValue::const_iterator<const std::string&, std::unordered_map<std::string, size_t>::const_iterator>::operator*() const;
+const string& RosValue::const_iterator<const string&, unordered_map<string, size_t>::const_iterator>::operator*() const;
 
 template<>
-const std::pair<const std::string&, const RosValue&> RosValue::const_iterator<const std::pair<const std::string&, const RosValue&>, std::unordered_map<std::string, size_t>::const_iterator>::operator*() const;
+const pair<const string&, const RosValue&> RosValue::const_iterator<const pair<const string&, const RosValue&>, unordered_map<string, size_t>::const_iterator>::operator*() const;
 
 }

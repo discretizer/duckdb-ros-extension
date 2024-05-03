@@ -1,0 +1,201 @@
+#include "ros_bag_reader.hpp"
+#include "ros_bag_metadata.hpp"
+#include "record_parser.hpp"
+
+#include <duckdb/common/string.hpp>
+#include <duckdb/common/shared_ptr.hpp>
+
+#include <string_view>
+#include <array>
+
+namespace duckdb {
+
+using namespace std::literals::string_view_literals;
+
+constexpr auto ROSBAG_MAGIC_STRING = "#ROSBAG V"sv; 
+
+static shared_ptr<RosBagMetadataCache>
+LoadMetadata(Allocator &allocator, FileHandle &file_handle) {
+    auto current_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    auto metadata = make_uniq<RosBagMetadata>();
+
+    std::array<char, ROSBAG_MAGIC_STRING.size()> temp; 
+
+    // First, check for the magic string indicating this is indeed a bag file
+
+    file_handle.Read(temp.data(), ROSBAG_MAGIC_STRING.size());
+
+    if (std::string_view(temp.data(), ROSBAG_MAGIC_STRING.size() ) != ROSBAG_MAGIC_STRING) {
+        throw std::runtime_error("This file doesn't appear to be a bag file...");
+    }
+
+    // Next, parse the version
+    file_handle.Read(temp.data(), 3);
+
+    // Only version 2.0 is supported at the moment
+    if (std::string_view(temp.data(), 3) != "2.0") {
+        throw std::runtime_error("Unsupported bag file version: " + std::string(temp.data(), 3) );
+    }
+
+    // The version is followed by a newline
+    file_handle.Read(temp.data(), 1);
+    if (std::string_view(temp.data(), 1) != "\n") {
+        throw std::runtime_error("Unable to find newline after version string, perhaps this bag file is corrupted?");
+    }
+
+    // Docs on the RosBag 2.0 format: http://wiki.ros.org/Bags/Format/2.0
+    /**
+    * Read the BAG_HEADER record. So long as the file is not corrupted, this is guaranteed
+    * to be the first record in the bag
+    */
+    uint32_t connection_count;
+    uint32_t chunk_count;
+    uint64_t index_pos;
+
+    RosRecordParser record_parser(allocator); 
+    record_parser.Read(file_handle, true);
+
+    readFields(record_parser.Header(), 
+        make_field("conn_count", connection_count), 
+        make_field("chunck_count", chunk_count ), 
+        make_field("index_pos", index_pos)
+    ); 
+    
+    metadata->connections.resize(connection_count); 
+    metadata->chunk_infos.reserve(chunk_count); 
+    metadata->chunks.reserve(chunk_count); 
+
+    file_handle.Seek(index_pos); 
+    for (idx_t i = 0; i < connection_count; i++) {
+        record_parser.Read(file_handle); 
+
+        uint32_t connection_id; 
+        std::string topic; 
+
+        readFields(record_parser.Header(), 
+            make_field("conn", connection_id), 
+            make_field("topic", topic)
+        ); 
+        if (topic.empty()) {
+            continue;
+        }
+        RosBagTypes::connection_data_t connection_data;
+        connection_data.topic = topic;
+
+        std::string latching_str; 
+        readFields(record_parser.Data(), 
+            make_field("type", connection_data.type), 
+            make_field("md5sum", connection_data.md5sum), 
+            make_field("message_definition", connection_data.message_definition), 
+            make_field("callerid", connection_data.callerid ), 
+            make_field("latching", latching_str)
+        ); 
+        connection_data.latching = (latching_str == "1"); 
+        const size_t slash_pos = connection_data.type.find_first_of('/');
+        if (slash_pos != std::string::npos) {
+            connection_data.scope = connection_data.type.substr(0, slash_pos);
+        }
+        metadata->connections[connection_id].id = connection_id;
+        metadata->connections[connection_id].topic = topic;
+        metadata->connections[connection_id].data = connection_data;
+        metadata->topic_connection_map[topic].push_back(metadata->connections[connection_id]);
+    }
+    /**
+    * Read the CHUNK_INFO records. These are guaranteed to be immediately after the CONNECTION records,
+    * so no need to seek the file pointer
+    */
+    for (size_t i = 0; i < chunk_count; i++) {
+        record_parser.Read(file_handle, true); 
+        RosBagTypes::chunk_info_t chunk_info;
+
+        uint32_t ver;
+        readFields(record_parser.Header(), 
+            make_field("ver", ver), 
+            make_field("chunk_pos", chunk_info.chunk_pos), 
+            make_field("start_time", chunk_info.start_time), 
+            make_field("end_time", chunk_info.end_time),
+            make_field("count", chunk_info.connection_count) 
+        ); 
+        metadata->chunk_infos[i] = chunk_info;
+    }
+    /**
+     * Now that we have some chunk metadata from the CHUNK_INFO records, process the CHUNK records from
+     * earlier in the file. Each CHUNK_INFO knows the position of its corresponding chunk.
+     */
+    for (size_t i = 0; i < chunk_count; i++) {
+        auto& info = metadata->chunk_infos[i];
+
+        // TODO: The chunk infos are not necessarily Revisit this logic if seeking back and forth across the file causes a slowdown
+        file_handle.Seek(info.chunk_pos); 
+        record_parser.Read(file_handle, true); 
+        RosBagTypes::chunk_t chunk; 
+
+        chunk.offset = file_handle.SeekPosition(); 
+        readFields(record_parser.Header(), 
+            make_field("compression", chunk.compression), 
+            make_field("size", chunk.uncompressed_size)
+        );  
+
+        if (!(chunk.compression == "lz4" || chunk.compression == "bz2" || chunk.compression == "none")) {
+            throw std::runtime_error("Unsupported compression type: " + chunk.compression);
+        }
+
+        // Each chunk is followed by multiple INDEX_DATA records, so parse those out here
+        for (size_t j = 0; j < info.connection_count; j++) {
+            // TODO: An INDEX_DATA record contains each message's timestamp and offset within the chunk.
+            // We currently don't save this information, but we potentially could to speed up accesses
+            // that only want data after a certain time.
+            record_parser.Read(file_handle, true); 
+
+            uint32_t version;
+            uint32_t connection_id;
+            uint32_t msg_count;
+      
+            readFields(  record_parser.Header(), 
+                make_field("ver", version), 
+                make_field("conn", connection_id), 
+                make_field("count", msg_count)
+            ); 
+            // NOTE: It seems like it would be simpler to just do &chunk here right? WRONG.
+            //       C++ reuses the same memory location for the chunk variable for each loop, so
+            //       if you use &chunk, all `into_chunk` values will be exactly the same
+            metadata->connections[connection_id].blocks.push_back(metadata->chunks.at(i)); 
+            metadata->connections[connection_id].data.message_count += msg_count; 
+        }
+        chunk.info = info;
+        metadata->chunks.push_back(chunk);
+    }
+  }
+
+
+
+}
+
+RosBagReader::RosBagReader(ClientContext& context, RosOptions options, string file_name) {
+}
+
+shared_ptr<RosMsgTypes::MsgDef> RosBagReader::MsgDefForTopic(const string &topic) {
+    const auto it = message_schemata.find(topic);
+    if (it == message_schemata.end()) {
+      parseMsgDefForTopic(topic);
+      return message_schemata[topic];
+    } else {
+      return it->second;
+    }
+}
+
+void RosBag::parseMsgDefForTopic(const std::string &topic) {
+  const auto it = topic_connection_map.find(topic);
+  if (it == topic_connection_map.end()) {
+    throw std::runtime_error("Unable to find topic in bag: " + topic);
+  }
+
+  const auto connections = it->second;
+  if (connections.empty()) {
+    throw std::runtime_error("No connection data for topic: " + topic);
+  }
+
+  const auto connection_data = connections.front().data;
+  message_schemata[topic] = parseMsgDef(connection_data.message_definition, connection_data.type);
+}
+}
