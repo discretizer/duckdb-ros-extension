@@ -2,7 +2,6 @@
   "dependencies": [
     "openssl", 
     "boost-variant",
-    "boost-iostreams",
     "boost-spirit", 
     "boost-fusion", 
     "bzip2", 
