@@ -27,12 +27,23 @@ public:
         return topics; 
     }
 
+    const RosBagTypes::connection_data_t& getConnectionData(const std::string &topic) const {
+        const auto it = topic_connection_map.find(topic);
+        if (it == topic_connection_map.end()) {
+            throw std::runtime_error("Unable to find topic in bag: " + topic);
+        }
+
+        const auto connections = it->second;
+        if (connections.empty()) {
+            throw std::runtime_error("No connection data for topic: " + topic);
+        }
+        return connections.front().data;
+    }
+
     unordered_set<string> topics; 
     vector<RosBagTypes::connection_record_t> connections;
-    
     unordered_map<string, vector<RosBagTypes::connection_record_t&>> topic_connection_map;
-    unordered_map<string, shared_ptr<RosMsgTypes::MsgDef>> message_schemata;
-
+    
     vector<RosBagTypes::chunk_info_t> chunk_infos;
     vector<RosBagTypes::chunk_t> chunks;
 }; 

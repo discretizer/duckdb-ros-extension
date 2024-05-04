@@ -1,9 +1,7 @@
 #include "ros_bag_reader.hpp"
 #include "ros_bag_metadata.hpp"
 #include "record_parser.hpp"
-
-#include <duckdb/common/string.hpp>
-#include <duckdb/common/shared_ptr.hpp>
+#include "message_def_parser.hpp"
 
 #include <string_view>
 #include <array>
@@ -14,6 +12,10 @@ using namespace std::literals::string_view_literals;
 
 constexpr auto ROSBAG_MAGIC_STRING = "#ROSBAG V"sv; 
 
+/// @brief Reads the appropriate metadata from the given bag.  
+/// @param allocator 
+/// @param file_handle 
+/// @return 
 static shared_ptr<RosBagMetadataCache>
 LoadMetadata(Allocator &allocator, FileHandle &file_handle) {
     auto current_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
@@ -165,38 +167,46 @@ LoadMetadata(Allocator &allocator, FileHandle &file_handle) {
         chunk.info = info;
         metadata->chunks.push_back(chunk);
     }
-    return make_shared_ptr<RosBagMetadataCache>(std::move(metadata), current_time);
+    return make_shared<RosBagMetadataCache>(std::move(metadata), current_time);
 }
 
-LogicalType ParquetReader::DeriveLogicalType() {
-    
+RosBagReader::RosBagReader(ClientContext& context, RosOptions options, string file_name):
+    allocator(BufferAllocator::Get(context)), options(std::move(options))
+{
+	file_handle = FileSystem::GetFileSystem(context).OpenFile(file_name, FileFlags::FILE_FLAGS_READ);
+	if (!file_handle->CanSeek()) {
+		throw NotImplementedException(
+		    "Reading ros bags files from a FIFO stream is not supported and cannot be efficiently supported since "
+		    "metadata is located at the end of the file. Write the stream to disk first and read from there instead.");
+	}
+	// If object cached is disabled
+	// or if this file has cached metadata
+	// or if the cached version already expired
+	if (!ObjectCache::ObjectCacheEnabled(context)) {
+		metadata = LoadMetadata(allocator, *file_handle);
+	} else {
+		auto last_modify_time = FileSystem::GetFileSystem(context).GetLastModifiedTime(*file_handle);
+		metadata = ObjectCache::GetObjectCache(context).Get<RosBagMetadataCache>(file_name);
+		if (!metadata || (last_modify_time + 10 >= metadata->read_time)) {
+			metadata = LoadMetadata(allocator, *file_handle);
+			ObjectCache::GetObjectCache(context).Put(file_name, metadata);
+		}
+	}
+    InitializeSchema(); 
 }
 
-RosBagReader::RosBagReader(ClientContext& context, RosOptions options, string file_name) {
+RosBagReader::RosBagReader(ClientContext &context, RosOptions options, shared_ptr<RosBagMetadataCache> metadata): 
+    allocator(BufferAllocator::Get(context)), options(std::move(options)), metadata(std::move(metadata))
+{
+	InitializeSchema();
 }
 
-shared_ptr<RosMsgTypes::MsgDef> RosBagReader::MsgDefForTopic(const string &topic) {
-    const auto it = message_schemata.find(topic);
-    if (it == message_schemata.end()) {
-      parseMsgDefForTopic(topic);
-      return message_schemata[topic];
-    } else {
-      return it->second;
-    }
+void RosBagReader::InitializeSchema() {
+
 }
 
-void RosBag::parseMsgDefForTopic(const std::string &topic) {
-  const auto it = topic_connection_map.find(topic);
-  if (it == topic_connection_map.end()) {
-    throw std::runtime_error("Unable to find topic in bag: " + topic);
-  }
-
-  const auto connections = it->second;
-  if (connections.empty()) {
-    throw std::runtime_error("No connection data for topic: " + topic);
-  }
-
-  const auto connection_data = connections.front().data;
-  message_schemata[topic] = parseMsgDef(connection_data.message_definition, connection_data.type);
+shared_ptr<RosMsgTypes::MsgDef> RosBagReader::MsgDefForTopic(const string &topic) const {
+    const auto conn_data = GetMetadata().getConnectionData(topic); 
+    return ParseMsgDef(conn_data.message_definition, conn_data.type); 
 }
 }

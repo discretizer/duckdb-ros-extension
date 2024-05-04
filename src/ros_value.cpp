@@ -40,7 +40,7 @@ RosValue::Type RosValue::getElementType() const {
 }
 
 const void* RosValue::getPrimitiveArrayRosValueBuffer() const {
-  if (getType() != Embag::RosValue::Type::primitive_array) {
+  if (getType() != RosValue::Type::primitive_array) {
     throw std::runtime_error("Cannot access the buffer of a non primitive_array RosValue");
   }
 
@@ -48,7 +48,7 @@ const void* RosValue::getPrimitiveArrayRosValueBuffer() const {
 }
 
 size_t RosValue::getPrimitiveArrayRosValueBufferSize() const {
-  if (getType() != Embag::RosValue::Type::primitive_array) {
+  if (getType() != RosValue::Type::primitive_array) {
     throw std::runtime_error("Cannot access the buffer of a non primitive_array RosValue");
   }
 
@@ -108,12 +108,12 @@ std::unordered_map<std::string, RosValue::Pointer> RosValue::getObjects() const 
   return objects;
 }
 
-std::vector<RosValue::Pointer> RosValue::getValues() const {
+vector<RosValue::Pointer> RosValue::getValues() const {
   if (type_ != Type::object && type_ != Type::array && type_ != Type::primitive_array) {
     throw std::runtime_error("Cannot getValues of a non object or array RosValue");
   }
 
-  std::vector<RosValue::Pointer> ros_value_pointers;
+  vector<RosValue::Pointer> ros_value_pointers;
   const size_t size = this->size();
   ros_value_pointers.reserve(size);
   for (size_t i = 0; i < size; i++) {
@@ -123,7 +123,7 @@ std::vector<RosValue::Pointer> RosValue::getValues() const {
   return ros_value_pointers;
 }
 
-std::string RosValue::toString(const std::string &path) const {
+string RosValue::toString(const string &path) const {
   switch (type_) {
     case Type::ros_bool: {
       return path + " -> " + (as<bool>() ? "true" : "false");

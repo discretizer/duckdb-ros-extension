@@ -3,6 +3,7 @@
 #include "duckdb.hpp"
 #ifndef DUCKDB_AMALGAMATION
 #include <duckdb/common/string.hpp>
+#include <duckdb/common/shared_ptr.hpp>
 #include <duckdb/common/unordered_map.hpp>
 #include <duckdb/common/unordered_set.hpp>
 #include <duckdb/common/vector.hpp>
@@ -45,11 +46,8 @@ class RosBagMetadata;
 struct RosOptions {
     explicit RosOptions() {
     }
-    explicit RosOptions(ClientContext &context);
 
-    string topic; 
-    bool decode_message;  
-
+    string topic;  
     MultiFileReaderOptions file_options;
 public: 
     void Serialize(Serializer &serializer); 
@@ -59,24 +57,21 @@ public:
 class RosBagReader {
 public: 
     RosBagReader(ClientContext &context, RosOptions options, string file_name);
-    RosBagReader(ClientContext &context, RosOptions parquet_options, shared_ptr<RosBagMetadataCache> metadata);
+    RosBagReader(ClientContext &context, RosOptions options, shared_ptr<RosBagMetadataCache> metadata);
 
     ~RosBagReader(); 
 
-    shared_ptr<RosBagMetadataCache> metadata;
-	RosOptions ros_options;
-	MultiFileReaderData reader_data;
+    const RosBagMetadata& GetMetadata() const; 
+    const string Topic() const; 
 
-    shared_ptr<RosMsgTypes::MsgDef> MsgDefForTopic(const std::string &topic) const {
-        const auto it = message_schemata.find(topic);
-        if (it == message_schemata.end()) {
-            parseMsgDefForTopic(topic);
-            return message_schemata.at(topic);
-        } else {
-            return it->second;
-        } 
-    }
-private:     
-    void parseMsgDefForTopic(const std::string &topic) const;
+private: 
+    shared_ptr<RosBagMetadataCache> metadata;
+	RosOptions                      options;
+	MultiFileReaderData             reader_data;
+
+    unique_ptr<FileHandle>          file_handle;
+    Allocator&                      allocator; 
+ 
+    shared_ptr<RosMsgTypes::MsgDef> MsgDefForTopic(const std::string &topic) const; 
 }; 
 }
