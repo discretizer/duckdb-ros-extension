@@ -13,6 +13,7 @@
 
 namespace duckdb {
 
+
 inline void RosLoadBag(DataChunk &args, ExpressionState& state, Vector &result) [
     
 ]

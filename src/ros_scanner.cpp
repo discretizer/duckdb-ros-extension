@@ -17,28 +17,28 @@ struct RosLocalState : public LocalTableFunctionState {
 	shared_ptr<RosBagReader> reader;
 };
 
-/// @brief ROS Global reader state.  Ideally we'd split this bag reading into 
-/// multiple threads (probably one per file) and leverage some parallelization to 
-/// increase efficiency. For now, let's keep it simple. 
+
+
+/// @brief ROS Global reader state. 
 struct RosGlobalState : public GlobalTableFunctionState {
     mutex lock;
 
-	//! The initial reader from the bind phase
+	/// @brief The initial reader from the bind phase
 	shared_ptr<RosBagReader> initial_reader;
 
-	//! Currently opened readers
+	/// @brief Currently opened readers
 	vector<shared_ptr<RosBagReader>> readers;
 	
-	//! Flag to indicate a file is being opened
+	/// @brief Flag to indicate a file is being opened
 	//vector<RosBagFileState> file_states;
 
-	//! Mutexes to wait for a file that is currently being opened
+	/// @brief Mutexes to wait for a file that is currently being opened
 	unique_ptr<mutex[]> file_mutexes;
 	
-	//! Signal to other threads that a file failed to open, letting every thread abort.
+	/// @brief Signal to other threads that a file failed to open, letting every thread abort.
 	bool error_opening_file = false;
 
-	//! Index of file currently up for scanning
+	/// @brief Index of file currently up for scanning
 	atomic<idx_t> file_index;
 
 	/// @brief Maximum threads for the current reader
@@ -50,17 +50,20 @@ struct RosGlobalState : public GlobalTableFunctionState {
 
 
 struct RosBindData : public TableFunctionData {
+	void Initialize(shared_ptr<RosBagReader> reader) {
+		initial_reader = std::move(reader);
+		ros_options = initial_reader->Options();
+	}
+
 	shared_ptr<RosBagReader> initial_reader;
 	vector<string> files;
 
 	RosOptions ros_options;
-	MultiFileReaderBindData reader_bind;
+	atomic<idx_t> chunk_count;
 
-	void Initialize(shared_ptr<RosBagReader> reader) {
-		initial_reader = std::move(reader);
-		ros_options = initial_reader->options;
-	}
+	MultiFileReaderBindData reader_bind;
 };
+
 
 static unique_ptr<FunctionData> RosBind(ClientContext &context, TableFunctionBindInput &input, vector<LogicalType> &return_types, vector<string> &names) {
 	input.inputs[0]
@@ -82,7 +85,12 @@ static double RosProgress(ClientContext &context, const FunctionData *bind_data_
 	return (percentage + 100.0 * gstate.file_index) / bind_data.files.size();
 }
 
+/// @brief 
+/// @param context 
+/// @param data_p 
+/// @param output 
 static void RosScanImplementation(ClientContext &context, TableFunctionInput &data_p, DataChunk &output) {
+	// Get current state information for this thread
     if (!data_p.local_state) {
         return;  
     }

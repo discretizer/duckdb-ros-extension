@@ -41,13 +41,19 @@ const RosMsgTypes::primitive_type_map_t RosMsgTypes::FieldDef::primitive_type_ma
     {"char", RosValue::Type::uint8},
 };
 
-class RosBagMetadata;
+class RosBagMetadata; 
+class RosBagMetadataCache;
 
+/// @brief Options for the ROS input
+/// This class should be in charge 
 struct RosOptions {
     explicit RosOptions() {
     }
 
-    string topic;  
+    string topic;
+    bool split_message; 
+    bool split_header;
+
     MultiFileReaderOptions file_options;
 public: 
     void Serialize(Serializer &serializer); 
@@ -63,6 +69,10 @@ public:
 
     const RosBagMetadata& GetMetadata() const; 
     const string Topic() const; 
+
+    const RosOptions& Options() const {
+        return options; 
+    }
 
 private: 
     shared_ptr<RosBagMetadataCache> metadata;
