@@ -2,6 +2,7 @@
 #include "ros_bag_metadata.hpp"
 #include "record_parser.hpp"
 #include "message_def_parser.hpp"
+#include "ros_schema.hpp"
 
 #include <string_view>
 #include <array>
@@ -170,7 +171,7 @@ LoadMetadata(Allocator &allocator, FileHandle &file_handle) {
     return make_shared<RosBagMetadataCache>(std::move(metadata), current_time);
 }
 
-RosBagReader::RosBagReader(ClientContext& context, RosOptions options, string file_name):
+RosBagReader::RosBagReader(ClientContext& context, RosReaderOptions options, string file_name):
     allocator(BufferAllocator::Get(context)), options(std::move(options))
 {
 	file_handle = FileSystem::GetFileSystem(context).OpenFile(file_name, FileFlags::FILE_FLAGS_READ);
@@ -192,21 +193,88 @@ RosBagReader::RosBagReader(ClientContext& context, RosOptions options, string fi
 			ObjectCache::GetObjectCache(context).Put(file_name, metadata);
 		}
 	}
-    InitializeSchema(); 
 }
 
-RosBagReader::RosBagReader(ClientContext &context, RosOptions options, shared_ptr<RosBagMetadataCache> metadata): 
+RosBagReader::RosBagReader(ClientContext &context, RosReaderOptions options, shared_ptr<RosBagMetadataCache> metadata): 
     allocator(BufferAllocator::Get(context)), options(std::move(options)), metadata(std::move(metadata))
 {
-	InitializeSchema();
+}
+
+const RosBagMetadata& RosBagReader::GetMetadata() const {
+    return *(metadata->metadata);
+}
+
+const string& RosBagReader::Topic() const {
+    return options.topic; 
+}
+
+const RosReaderOptions& RosBagReader::Options() const {
+    return options; 
+}
+
+idx_t RosBagReader::NumChunks() const {
+    return topic_index->chunks.size(); 
+} 
+
+idx_t RosBagReader::NumMessages() const {
+    return topic_index->message_cnt; 
 }
 
 void RosBagReader::InitializeSchema() {
+    message_def = MakeMsgDef(options.topic); 
+    
+    // This flag is set to true if we successfully split the header field
+    // In this case we can ignore the heaer field when splitting the main message fields 
+    bool header_split = false; 
 
+    // If splt header option is enabled and there is a header, add header fields to schema
+    // Lets dynamically add header fields to shema 
+    if (options.split_header && (message_def->fieldIndexes()->count("header") > 0)) {
+        auto header_idx = message_def->fieldIndexes()->at("header");
+        auto header_mem = message_def->members().at(header_idx); 
+
+        if ( header_mem.index() == 0) {
+            auto header = std::get<RosMsgTypes::FieldDef>(header_mem); 
+            if (header.type() ==  RosValue::Type::object) {
+                header_split = true; 
+                for (auto member : header.typeDefinition().members()) {
+                    if (member.index() == 0) {
+                        auto field = std::get<RosMsgTypes::FieldDef>(member); 
+                        names.push_back("header." + field.name()); 
+                        return_types.push_back(ConvertRosFieldType(field)); 
+                    }
+                }
+            }
+        } 
+    }
+    // Convert each ros message field into schema 
+    for (auto member : message_def->members()) {
+        if (member.index() == 0){ 
+            auto field = std::get<RosMsgTypes::FieldDef>(member); 
+            // Ignore header field if we've already split it. 
+            if (!(header_split && field.name() == "header")) {
+                 names.push_back(field.name()); 
+                 return_types.push_back(ConvertRosFieldType(field)); 
+            }
+        }
+    } 
 }
 
-shared_ptr<RosMsgTypes::MsgDef> RosBagReader::MsgDefForTopic(const string &topic) const {
+shared_ptr<RosMsgTypes::MsgDef> RosBagReader::MakeMsgDef(const string &topic) const {
     const auto conn_data = GetMetadata().getConnectionData(topic); 
     return ParseMsgDef(conn_data.message_definition, conn_data.type); 
 }
+
+shared_ptr<RosBagReader::TopicIndex> RosBagReader::MakeTopicIndex(const std::string &topic) const {
+    auto topic_idx = make_shared<RosBagReader::TopicIndex>(); 
+
+    for (const auto &connection_record : metadata->metadata->topic_connection_map.at(topic)) {
+        for (const auto &block : connection_record->blocks) {
+          topic_idx->message_cnt += block.info.message_count; 
+          topic_idx->chunks.emplace(block);
+        }
+        topic_idx->connection_ids.emplace(connection_record->id);
+      }
+    }   
 }
+

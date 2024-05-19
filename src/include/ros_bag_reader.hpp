@@ -17,6 +17,7 @@
 #include "ros_value.hpp"
 #include "ros_bag_types.hpp"
 #include "ros_msg_types.hpp"
+#include "resizable_buffer.hpp"
 
 namespace duckdb{
 
@@ -45,43 +46,89 @@ class RosBagMetadata;
 class RosBagMetadataCache;
 
 /// @brief Options for the ROS input
-/// This class should be in charge 
-struct RosOptions {
-    explicit RosOptions() {
+/// This class should be in charge of parsing inputs for the ros reader function and
+/// 
+struct RosReaderOptions {
+    explicit RosReaderOptions() {
     }
 
+    /// @brief  name of the topic to extract as a table from the bag. 
+    /// This is the first positional option of the command. 
     string topic;
-    bool split_message; 
+
+    /// @brief The depth at which to split individual fields.  This value
+    /// determines the output schema. 
+    uint8_t field_split_depth; 
+
+    /// @brief Split the header field (i.e std_msgs/Header).  This option 
+    /// acts indepently of the field split depth above. If true the header will 
+    /// be split into independent columns for each header value.  
+    /// TODO: potentially change how column splitting works.
     bool split_header;
 
     MultiFileReaderOptions file_options;
 public: 
     void Serialize(Serializer &serializer); 
-    static RosOptions Deserialize(Deserializer& deserializer); 
+    static RosReaderOptions Deserialize(Deserializer& deserializer); 
+}; 
+
+struct RosReaderScanState {
+    ResizeableBuffer repeat_buf;
+    
+    uint32_t current_connection_id = 0;
+    size_t current_message_data_offset;
+    int32_t current_message_len = 0;
 }; 
 
 class RosBagReader {
 public: 
-    RosBagReader(ClientContext &context, RosOptions options, string file_name);
-    RosBagReader(ClientContext &context, RosOptions options, shared_ptr<RosBagMetadataCache> metadata);
+    RosBagReader(ClientContext &context, RosReaderOptions options, string file_name);
+    RosBagReader(ClientContext &context, RosReaderOptions options, shared_ptr<RosBagMetadataCache> metadata);
 
     ~RosBagReader(); 
 
-    const RosBagMetadata& GetMetadata() const; 
-    const string Topic() const; 
+    const RosBagMetadata& GetMetadata() const;
 
-    const RosOptions& Options() const {
-        return options; 
-    }
+    const string& Topic() const;
+    const RosReaderOptions& Options() const; 
+
+    size_t NumChunks() const; 
+    size_t NumMessages() const; 
 
 private: 
+    struct TopicIndex {
+        struct bag_offset_compare_t {
+            bool operator()(const RosBagTypes::chunk_t &left, const RosBagTypes::chunk_t &right) const {
+                return left.offset < right.offset;
+            }
+        }; 
+
+        // For now we'll take the embag strategy of using the bag offset to sort
+        // the chunks.  Potentially it would be better going forward to sort the 
+        // chunks by timestamp.  No matter what this would still probably
+        // be chuck write timestamp and not MESSAGE timestamp 
+        std::set<const RosBagTypes::chunk_t&, bag_offset_compare_t> chunks; 
+        std::unordered_set<uint32_t>                                connection_ids; 
+        size_t                                                       message_cnt  = 0; 
+    }; 
+
     shared_ptr<RosBagMetadataCache> metadata;
-	RosOptions                      options;
+    shared_ptr<TopicIndex>          topic_index; 
+    shared_ptr<RosMsgTypes::MsgDef> message_def; 
+
+	RosReaderOptions                options;
 	MultiFileReaderData             reader_data;
+
+    vector<LogicalType>             return_types;
+	vector<string>                  names; 
 
     unique_ptr<FileHandle>          file_handle;
     Allocator&                      allocator; 
- 
-    shared_ptr<RosMsgTypes::MsgDef> MsgDefForTopic(const std::string &topic) const; 
+
+    void InitializeSchema(); 
+
+    shared_ptr<RosMsgTypes::MsgDef> MakeMsgDef(const std::string &topic) const;
+    shared_ptr<TopicIndex> MakeTopicIndex(const std::string &topic) const; 
+
 }; 
 }

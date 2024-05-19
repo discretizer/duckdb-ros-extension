@@ -116,7 +116,7 @@ struct RosBagTypes {
 
   struct connection_record_t {
     uint32_t id;
-    vector<chunk_t&> blocks;
+    vector<const chunk_t&> blocks;
     string topic;
     connection_data_t data;
   };

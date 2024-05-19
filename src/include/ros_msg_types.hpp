@@ -111,8 +111,8 @@ class RosMsgTypes{
     string value;
   };
 
-  typedef boost::variant<FieldDef, ConstantDef> MemberDef;
-  typedef boost::variant<FieldDef::parseable_info_t, ConstantDef> member_parseable_info_t;
+  typedef std::variant<FieldDef, ConstantDef> MemberDef;
+  typedef std::variant<FieldDef::parseable_info_t, ConstantDef> member_parseable_info_t;
 
   class BaseMsgDef {
    public:
@@ -125,7 +125,7 @@ class RosMsgTypes{
     {
       size_t num_fields = 0;
       for (const auto &member : parsed_info.members) {
-        if (member.which() == 0) {
+        if (member.index() == 0) {
           ++num_fields;
         }
       }
@@ -135,11 +135,11 @@ class RosMsgTypes{
       field_indexes_->reserve(num_fields);
       size_t field_num = 0;
       for (const auto& member : parsed_info.members) {
-        if (member.which() == 0) {
-          members_.emplace_back(boost::get<FieldDef::parseable_info_t>(member));
-          field_indexes_->emplace(boost::get<FieldDef::parseable_info_t>(member).field_name, field_num++);
+        if (member.index() == 0) {
+          members_.emplace_back(std::get<FieldDef::parseable_info_t>(member));
+          field_indexes_->emplace(std::get<FieldDef::parseable_info_t>(member).field_name, field_num++);
         } else {
-          members_.emplace_back(boost::get<ConstantDef>(member));
+          members_.emplace_back(std::get<ConstantDef>(member));
         }
       }
 
@@ -153,11 +153,11 @@ class RosMsgTypes{
     }
 
     static const std::string& getMemberName(const MemberDef &member) {
-      switch (member.which()) {
+      switch (member.index()) {
         case 0:
-          return boost::get<FieldDef>(member).name();
+          return std::get<FieldDef>(member).name();
         case 1:
-          return boost::get<ConstantDef>(member).constant_name;
+          return std::get<ConstantDef>(member).constant_name;
       }
     }
 
@@ -179,8 +179,8 @@ class RosMsgTypes{
 
     void initializeFieldTypeDefinitions(const std::unordered_map<std::string, EmbeddedMsgDef>& definition_map) {
       for (auto& member : members_) {
-        if (member.which() == 0) {
-          auto& field = boost::get<FieldDef>(member);
+        if (member.index() == 0) {
+          auto& field = std::get<FieldDef>(member);
           if (field.type() == RosValue::Type::object) {
             field.setTypeDefinition(definition_map, scope_);
           }

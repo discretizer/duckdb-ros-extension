@@ -18,20 +18,20 @@ const RosValue::Pointer MessageParser::parse() {
 
 void MessageParser::initObject(size_t object_offset, const RosMsgTypes::BaseMsgDef &object_definition) {
   const size_t children_offset = ros_values_offset;
-  ros_values->at(object_offset).object_info_.children.base = ros_values;
-  ros_values->at(object_offset).object_info_.children.offset = children_offset;
-  ros_values->at(object_offset).object_info_.children.length = 0;
+  std::get<RosValue::object_info_t>(ros_values->at(object_offset).info_).children.base = ros_values;
+  std::get<RosValue::object_info_t>(ros_values->at(object_offset).info_).children.offset = children_offset;
+  std::get<RosValue::object_info_t>(ros_values->at(object_offset).info_).children.length = 0;
   for (auto &member: object_definition.members()) {
-    if (member.which() == 0) {
-      auto& field = boost::get<RosMsgTypes::FieldDef>(member);
+    if (member.index() == 0) {
+      auto& field = std::get<RosMsgTypes::FieldDef>(member);
       emplaceField(field);
     }
   }
 
   for (auto &member: object_definition.members()) {
-    if (member.which() == 0) {
-      auto& field = boost::get<RosMsgTypes::FieldDef>(member);
-      const size_t child_offset = children_offset + ros_values->at(object_offset).object_info_.children.length++;
+    if (member.index() == 0) {
+      auto& field = std::get<RosMsgTypes::FieldDef>(member);
+      const size_t child_offset = children_offset + std::get<RosValue::object_info_t>(ros_values->at(object_offset).info_).children.length++;
       switch (ros_values->at(child_offset).type_) {
         case RosValue::Type::object: {
           auto& embedded_type = field.typeDefinition();
@@ -84,9 +84,9 @@ void MessageParser::initArray(size_t array_offset, const RosMsgTypes::FieldDef &
     const size_t children_offset = ros_values_offset;
     ros_values_offset += array_length;
 
-    ros_values->at(array_offset).array_info_.children.length = array_length;
-    ros_values->at(array_offset).array_info_.children.base = ros_values;
-    ros_values->at(array_offset).array_info_.children.offset = children_offset;
+    std::get<RosValue::array_info_t>(ros_values->at(array_offset).info_).children.length = array_length;
+    std::get<RosValue::array_info_t>(ros_values->at(array_offset).info_).children.base = ros_values;
+    std::get<RosValue::array_info_t>(ros_values->at(array_offset).info_).children.offset = children_offset;
 
     if (field_type == RosValue::Type::string) {
       for (size_t i = 0; i < array_length; ++i) {

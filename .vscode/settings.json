@@ -73,6 +73,7 @@
         "variant": "cpp",
         "vector": "cpp",
         "algorithm": "cpp",
-        "*.ipp": "cpp"
+        "*.ipp": "cpp",
+        "__assert": "cpp"
     }
 }

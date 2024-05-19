@@ -2,13 +2,12 @@
 
 #include <cstdint>
 #include <cstring>
+#include <variant>
 
 #include <duckdb/common/string.hpp>
 #include <duckdb/common/unordered_map.hpp>
 #include <duckdb/common/vector.hpp>
 #include <duckdb/common/pair.hpp>
-
-#include <boost/variant.hpp>
 
 #include "span.hpp"
 
@@ -162,7 +161,7 @@ class RosValue {
   };
 
   template<class ReturnType>
-  class const_iterator<ReturnType, std::unordered_map<std::string, size_t>::const_iterator> : public const_iterator_base<ReturnType, std::unordered_map<std::string, size_t>::const_iterator, const_iterator<ReturnType, std::unordered_map<std::string, size_t>::const_iterator>> {
+  class const_iterator<ReturnType, unordered_map<std::string, size_t>::const_iterator> : public const_iterator_base<ReturnType, std::unordered_map<std::string, size_t>::const_iterator, const_iterator<ReturnType, std::unordered_map<std::string, size_t>::const_iterator>> {
    public:
     const_iterator(const RosValue& value, std::unordered_map<std::string, size_t>::const_iterator index)
       : const_iterator_base<ReturnType, std::unordered_map<std::string, size_t>::const_iterator, const_iterator<ReturnType, std::unordered_map<std::string, size_t>::const_iterator>>(value, index)
@@ -205,7 +204,7 @@ class RosValue {
  public:
   RosValue(const Type type, const shared_ptr<vector<char>>& message_buffer, const size_t offset)
     : type_(type)
-    , primitive_info_({ offset, message_buffer })
+    , info_(std::in_place_type<primitive_info_t>, offset, message_buffer )
   {
     if (type_ == Type::object || type_ == Type::array || type_ == Type::primitive_array) {
       throw std::runtime_error("Cannot create an object or array with this constructor");
@@ -213,7 +212,7 @@ class RosValue {
   }
   RosValue(const Type type)
     : type_(type)
-    , primitive_info_({ 0, nullptr })
+    , info_(std::in_place_type<primitive_info_t>,  0, nullptr)
   {
     if (type_ == Type::object || type_ == Type::array || type_ == Type::primitive_array) {
       throw std::runtime_error("Cannot create an object or array with this constructor");
@@ -221,67 +220,18 @@ class RosValue {
   }
   RosValue(const shared_ptr<unordered_map<string, size_t>>& field_indexes)
     : type_(Type::object)
-    , object_info_()
+    , info_(std::in_place_type<object_info_t>, field_indexes)
   {
-    object_info_.field_indexes = field_indexes;
   }
   RosValue(const _array_identifier &i)
     : type_(Type::array)
-    , array_info_()
+    , info_(std::in_place_type<array_info_t>)
   {
   }
   RosValue(const Type element_type, const shared_ptr<vector<char>>& message_buffer)
     : type_(Type::primitive_array)
-    , primitive_array_info_(element_type, message_buffer)
+    , info_(std::in_place_type<primitive_array_info_t>, element_type, message_buffer)
   {
-  }
-
-  // Define custom copy constructor, destructor, and assignment operator because of the union for the infos
-  RosValue(const RosValue &other): type_(other.type_) {
-    if (type_ == Type::object) {
-      new (&object_info_) auto(other.object_info_);
-    } else if (type_ == Type::array) {
-      new (&array_info_) auto(other.array_info_);
-    } else if (type_ == Type::primitive_array) {
-      new (&primitive_array_info_) auto(other.primitive_array_info_);
-    } else {
-      new (&primitive_info_) auto(other.primitive_info_);
-    }
-  }
-
-  ~RosValue() {
-    destroy_object_info();
-  }
-
-  RosValue& operator=(const RosValue& other) {
-    if (type_ != other.type_) {
-      destroy_object_info();
-    }
-
-    type_ = other.type_;
-    if (type_ == Type::object) {
-      object_info_ = other.object_info_;
-    } else if (type_ == Type::array) {
-      array_info_ = other.array_info_;
-    } else if (type_ == Type::primitive_array) {
-      primitive_array_info_ = other.primitive_array_info_;
-    } else {
-      primitive_info_ = other.primitive_info_;
-    }
-
-    return *this;
-  }
-
-  void destroy_object_info() {
-    if (type_ == Type::object) {
-      object_info_.~object_info_t();
-    } else if (type_ == Type::array) {
-      array_info_.~array_info_t();
-    } else if (type_ == Type::primitive_array) {
-      primitive_array_info_.~primitive_array_info_t();
-    } else {
-      primitive_info_.~primitive_info_t();
-    }
   }
 
   // Convenience accessors
@@ -310,14 +260,14 @@ class RosValue {
       throw std::runtime_error("Value is not an object");
     }
 
-    return object_info_.field_indexes->count(key);
+    return std::get<object_info_t>(info_).field_indexes->count(key);
   }
 
   size_t size() const {
     if (type_ == Type::array || type_ == Type::object) {
       return getChildren().length;
     } else if (type_ == Type::primitive_array) {
-      return primitive_array_info_.length;
+      return std::get<primitive_array_info_t>(info_).length;
     } else {
       throw std::runtime_error("Value is not an array or an object");
     }
@@ -341,6 +291,10 @@ class RosValue {
 
  private:
   struct primitive_info_t {
+    primitive_info_t(size_t off, const shared_ptr<vector<char>> &buf)
+      : offset(off)
+      , message_buffer(buf)
+    {}
     size_t offset; 
     shared_ptr<vector<char>> message_buffer;
   };
@@ -363,18 +317,16 @@ class RosValue {
   };
 
   struct object_info_t {
+    object_info_t(shared_ptr<unordered_map<string, size_t>> field_idx) 
+      : field_indexes(field_idx) 
+      {}
     ros_value_list_t children;
     shared_ptr<unordered_map<string, size_t>> field_indexes;
   };
 
   Type type_;
-  union {
-    primitive_info_t primitive_info_;
-    primitive_array_info_t primitive_array_info_;
-    array_info_t array_info_;
-    object_info_t object_info_;
-  };
-
+  std::variant<primitive_info_t, primitive_array_info_t, array_info_t, object_info_t> info_; 
+  
   template<typename T>
   const T& getPrimitive() const {
     return reinterpret_cast<const T&>(primitive_info_.message_buffer->at(primitive_info_.offset));
@@ -383,9 +335,9 @@ class RosValue {
   const ros_value_list_t& getChildren() const {
     switch(type_) {
       case Type::object:
-        return object_info_.children;
+        return std::get<object_info_t>(info_).children;
       case Type::array:
-        return array_info_.children;
+        return std::get<array_info_t>(info_).children;
       default:
         throw std::runtime_error("Cannot getChildren of a RosValue that is not an object or array");
     }

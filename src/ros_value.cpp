@@ -31,7 +31,7 @@ const RosValue::Pointer RosValue::at(const std::string &key) const {
 
 RosValue::Type RosValue::getElementType() const {
   if (type_ == Type::primitive_array) {
-    return primitive_array_info_.element_type;
+    return std::get<primitive_array_info_t>(info_).element_type;
   } else if (type_ == Type::array) {
     return at(0)->getType();
   } else {
@@ -52,7 +52,7 @@ size_t RosValue::getPrimitiveArrayRosValueBufferSize() const {
     throw std::runtime_error("Cannot access the buffer of a non primitive_array RosValue");
   }
 
-  return primitive_array_info_.length * primitiveTypeToSize(getElementType());
+  return std::get<primitive_array_info_t>(info_).length * primitiveTypeToSize(getElementType());
 }
 
 template<typename T>
@@ -65,7 +65,7 @@ const RosValue::Pointer RosValue::get(const std::string &key) const {
     throw std::runtime_error("Value is not an object");
   }
 
-  return at(object_info_.field_indexes->at(key));
+  return at(std::get<object_info_t>(info_).field_indexes->at(key));
 }
 
 template<>
@@ -81,14 +81,15 @@ const std::string RosValue::as<std::string>() const {
 
 const RosValue::Pointer RosValue::at(const size_t idx) const {
   if (type_ == Type::object) {
-    return object_info_.children.at(idx);
+    return std::get<object_info_t>(info_).children.at(idx);
   } else if (type_ == Type::array) {
-    return array_info_.children.at(idx);
+    return std::get<array_info_t>(info_).children.at(idx);
   } else if (type_ == Type::primitive_array) {
+    auto array_info = std::get<primitive_array_info_t>(info_); 
     return RosValue::Pointer(
-      primitive_array_info_.element_type,
-      primitive_array_info_.message_buffer,
-      primitive_array_info_.offset + idx * primitiveTypeToSize(primitive_array_info_.element_type)
+      array_info.element_type,
+      array_info.message_buffer,
+      array_info.offset + idx * primitiveTypeToSize(array_info.element_type)
     );
   } else {
     throw std::runtime_error("Value is not an array or object");
@@ -101,8 +102,8 @@ std::unordered_map<std::string, RosValue::Pointer> RosValue::getObjects() const 
   }
 
   std::unordered_map<std::string, RosValue::Pointer> objects;
-  objects.reserve(object_info_.children.length);
-  for (const auto& field : *object_info_.field_indexes) {
+  objects.reserve(std::get<object_info_t>(info_).children.length);
+  for (const auto& field : *std::get<object_info_t>(info_).field_indexes) {
     objects.emplace(field.first, at(field.second));
   }
   return objects;
@@ -172,15 +173,15 @@ string RosValue::toString(const string &path) const {
     }
     case Type::object: {
       std::ostringstream output;
-      for (const auto& field : *object_info_.field_indexes) {
+      for (const auto& field : *std::get<object_info_t>(info_).field_indexes) {
         if (path.empty()) {
-          output << object_info_.children.at(field.second)->toString(field.first);
+          output << std::get<object_info_t>(info_).children.at(field.second)->toString(field.first);
         } else {
-          output << object_info_.children.at(field.second)->toString(path + "." + field.first);
+          output << std::get<object_info_t>(info_).children.at(field.second)->toString(path + "." + field.first);
         }
 
         // No need for a newline if our child is an object or array
-        const auto &object_type = object_info_.children.at(field.second)->getType();
+        const auto &object_type = std::get<object_info_t>(info_).children.at(field.second)->getType();
         if (!(object_type == Type::object || object_type == Type::array)) {
           output << std::endl;
         }
@@ -189,9 +190,9 @@ string RosValue::toString(const string &path) const {
     }
     case Type::array: {
       std::ostringstream output;
-      for (size_t i = 0; i < array_info_.children.length; ++i) {
+      for (size_t i = 0; i < std::get<array_info_t>(info_).children.length; ++i) {
         const std::string array_path = path + "[" + std::to_string(i) + "]";
-        output << array_info_.children.at(i)->toString(array_path) << std::endl;
+        output << std::get<array_info_t>(info_).children.at(i)->toString(array_path) << std::endl;
       }
       return output.str();
     }
@@ -290,7 +291,7 @@ const std::string& RosValue::const_iterator<const std::string&, std::unordered_m
 
 template<>
 const std::pair<const std::string&, const RosValue::Pointer> RosValue::const_iterator<const std::pair<const std::string&, const RosValue::Pointer>, std::unordered_map<std::string, size_t>::const_iterator>::operator*() const {
-  return std::make_pair(index_->first, value_.object_info_.children.at(index_->second));
+  return std::make_pair(index_->first, std::get<object_info_t>(value_.info_).children.at(index_->second));
 }
 
 }

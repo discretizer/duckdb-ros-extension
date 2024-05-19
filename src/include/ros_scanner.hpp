@@ -5,8 +5,6 @@
 
 namespace duckdb {
 
-
-
 class RosScanFunction {
 public: 
     static TableFilterSet
