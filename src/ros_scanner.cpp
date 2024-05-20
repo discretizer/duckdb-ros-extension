@@ -17,30 +17,47 @@ struct RosLocalState : public LocalTableFunctionState {
 	shared_ptr<RosBagReader> reader;
 };
 
+struct RosBindData : public TableFunctionData {
+	shared_ptr<RosBagReader> initial_reader;
+	RosReaderOptions ros_options;
+
+	/// @brief cardinality of the initial bind file 
+	idx_t initial_file_cardinality;
+
+	/// @brief chunk count of the initial bind file 
+	idx_t initial_file_chunk_count;
+
+	/// @brief  read chunch count.  This is used for updating the status. 
+	atomic<idx_t> chunk_count;
+
+	vector<string> files;
+	MultiFileReaderBindData reader_bind;
+
+	// Initialization function.  This function is used by several of the 
+	// M
+	void Initialize(shared_ptr<RosBagReader> reader) 
+	 {
+		chunk_count = 0; 
+		initial_reader = std::move(reader);
+		ros_options = initial_reader->Options();
+
+		initial_file_cardinality = initial_reader->NumMessages(); 
+		initial_file_chunk_count = initial_reader->NumChunks(); 
+	}
+};
+
 /// @brief ROS Global reader state.  Ideally we'd split this bag reading into 
 /// multiple threads and leverage some chunk indexing and parallelization to 
 /// increase efficiency. 
-struct RosGlobalState : public GlobalTableFunctionState {
-    //! Global state mutex lock
-	mutex lock;
+class RosGlobalState : public GlobalTableFunctionState {
+public: 
+	RosGlobalState( const RosBindData &bind_data):
+		initial_reader(bind_data.initial_reader), readers(bind_data.files.size(), nullptr), 
+		file_mutexes(make_uniq_array<mutex>(bind_data.files.size()))  
+	{
+	}
 
-	//! The initial reader from the bind pha
-	shared_ptr<RosBagReader> initial_reader;
 
-	//! Currently opened readers
-	vector<shared_ptr<RosBagReader>> readers;
-	
-	//! Flag to indicate a file is being opened
-	//vector<RosBagFileState> file_states;
-
-	//! Mutexes to wait for a file that is currently being opened
-	unique_ptr<mutex[]> file_mutexes;
-	
-	//! Signal to other threads that a file failed to open, letting every thread abort.
-	bool error_opening_file = false;
-
-	//! Index of file currently up for scanning
-	atomic<idx_t> file_index;
 
 	/// @brief Maximum threads for the current reader
 	/// @return Maximum threads. 
@@ -59,28 +76,37 @@ struct RosGlobalState : public GlobalTableFunctionState {
 		// One reader per file
 		return bind_data.files.size();
 	}
+
+
+public: 
+	static const Calc
+
+
+// Data elements public for now 
+public: 
+    //! Global state mutex lock
+	mutex lock;
+
+	//! The initial reader from the bind pha
+	shared_ptr<RosBagReader> initial_reader;
+
+	//! Currently opened readers
+	vector<shared_ptr<RosBagReader>> readers;
+	
+	//! Mutexes to wait for a file that is currently being opened
+	unique_ptr<mutex[]> file_mutexes;
+	
+	//! Signal to other threads that a file failed to open, letting every thread abort.
+	bool error_opening_file = false;
+
+	//! Index of file currently up for scanning
+	atomic<idx_t> file_index;
+
+	//! Maximum number of threads; 
+	idx_t max_threads; 
 }; 
 
-struct RosBindData : public TableFunctionData {
-	shared_ptr<RosBagReader> initial_reader;
-	RosReaderOptions ros_options;
 
-	idx_t initial_file_cardinality;
-	idx_t initial_file_chunk_count;
-	atomic<idx_t> chunk_count;
-
-	vector<string> files;
-	MultiFileReaderBindData reader_bind;
-
-	
-	void Initialize(shared_ptr<RosBagReader> reader) {
-		initial_reader = std::move(reader);
-		ros_options = initial_reader->Options();
-
-		initial_file_cardinality = initial_reader->NumMessages(); 
-		initial_file_chunk_count = initial_reader->NumChunks(); 
-	}
-};
 
 static unique_ptr<FunctionData> RosBind(ClientContext &context, TableFunctionBindInput &input, vector<LogicalType> &return_types, vector<string> &names) {
 	// Create output result
@@ -100,9 +126,12 @@ static unique_ptr<FunctionData> RosBind(ClientContext &context, TableFunctionBin
 		}
 	}
 	ros_options.file_options.AutoDetectHivePartitioning(files, context); 
-	
+	if (ros_options.file_options.union_by_name) {
+		throw BinderException("RosBag reading doesn't currently support union_by_name"); 
+	}
+
 	// Create initial reader.  This should initialize the schema.
-	auto initial_reader = make_shared<RosBagReader>(context, ros_options, files[0]);
+	auto initial_reader = make_shared_ptr<RosBagReader>(context, ros_options, files[0]);
 
 	std::copy(initial_reader->GetNames().cbegin(), initial_reader->GetNames().cend(), names.end());
 	std::copy(initial_reader->GetTypes().cbegin(), initial_reader->GetTypes().cend(), return_types.end()); 
