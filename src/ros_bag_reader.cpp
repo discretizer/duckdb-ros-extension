@@ -193,11 +193,13 @@ RosBagReader::RosBagReader(ClientContext& context, RosReaderOptions options, str
 			ObjectCache::GetObjectCache(context).Put(file_name, metadata);
 		}
 	}
+    InitializeSchema(); 
 }
 
 RosBagReader::RosBagReader(ClientContext &context, RosReaderOptions options, shared_ptr<RosBagMetadataCache> metadata): 
     allocator(BufferAllocator::Get(context)), options(std::move(options)), metadata(std::move(metadata))
 {
+    InitializeSchema(); 
 }
 
 const RosBagMetadata& RosBagReader::GetMetadata() const {
@@ -212,11 +214,11 @@ const RosReaderOptions& RosBagReader::Options() const {
     return options; 
 }
 
-idx_t RosBagReader::NumChunks() const {
+size_t RosBagReader::NumChunks() const {
     return topic_index->chunks.size(); 
 } 
 
-idx_t RosBagReader::NumMessages() const {
+size_t RosBagReader::NumMessages() const {
     return topic_index->message_cnt; 
 }
 

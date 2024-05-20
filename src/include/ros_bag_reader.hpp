@@ -56,18 +56,13 @@ struct RosReaderOptions {
     /// This is the first positional option of the command. 
     string topic;
 
-    /// @brief The depth at which to split individual fields.  This value
-    /// determines the output schema. 
-    uint8_t field_split_depth; 
-
-    /// @brief Split the header field (i.e std_msgs/Header).  This option 
-    /// acts indepently of the field split depth above. If true the header will 
+    /// @brief Split the header field (i.e std_msgs/Header). If true the header will 
     /// be split into independent columns for each header value.  
     /// TODO: potentially change how column splitting works.
-    bool split_header;
+    bool split_header = true; 
 
     MultiFileReaderOptions file_options;
-public: 
+public:  
     void Serialize(Serializer &serializer); 
     static RosReaderOptions Deserialize(Deserializer& deserializer); 
 }; 
@@ -95,6 +90,12 @@ public:
     size_t NumChunks() const; 
     size_t NumMessages() const; 
 
+    const vector<LogicalType>& GetTypes() const;
+    const vector<string>&  GetNames() const; 
+
+    const string& GetFileName() const; 
+
+    MultiFileReaderData             reader_data;
 private: 
     struct TopicIndex {
         struct bag_offset_compare_t {
@@ -109,7 +110,7 @@ private:
         // be chuck write timestamp and not MESSAGE timestamp 
         std::set<const RosBagTypes::chunk_t&, bag_offset_compare_t> chunks; 
         std::unordered_set<uint32_t>                                connection_ids; 
-        size_t                                                       message_cnt  = 0; 
+        size_t                                                      message_cnt  = 0; 
     }; 
 
     shared_ptr<RosBagMetadataCache> metadata;
@@ -117,7 +118,6 @@ private:
     shared_ptr<RosMsgTypes::MsgDef> message_def; 
 
 	RosReaderOptions                options;
-	MultiFileReaderData             reader_data;
 
     vector<LogicalType>             return_types;
 	vector<string>                  names; 

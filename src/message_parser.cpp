@@ -107,16 +107,16 @@ void MessageParser::initArray(size_t array_offset, const RosMsgTypes::FieldDef &
       }
     }
   } else {
-    ros_values->at(array_offset).primitive_array_info_.length = array_length;
-    ros_values->at(array_offset).primitive_array_info_.offset = message_buffer_offset;
+    std::get<RosValue::primitive_array_info_t>(ros_values->at(array_offset).info_).length = array_length;
+    std::get<RosValue::primitive_array_info_t>(ros_values->at(array_offset).info_).offset = message_buffer_offset;
     message_buffer_offset += array_length * field.typeSize();
   }
 }
 
 void MessageParser::initPrimitive(size_t primitive_offset, const RosMsgTypes::FieldDef &field) {
   RosValue& primitive = ros_values->at(primitive_offset);
-  primitive.primitive_info_.message_buffer = message_buffer;
-  primitive.primitive_info_.offset = message_buffer_offset;
+  std::get<RosValue::primitive_info_t>(primitive.info_).message_buffer = message_buffer;
+  std::get<RosValue::primitive_info_t>(primitive.info_).offset = message_buffer_offset;
 
   if (field.type() == RosValue::Type::string) {
     message_buffer_offset += primitive.getPrimitive<uint32_t>() + sizeof(uint32_t);
