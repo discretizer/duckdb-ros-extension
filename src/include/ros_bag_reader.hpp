@@ -65,15 +65,7 @@ struct RosReaderOptions {
 public:  
     void Serialize(Serializer &serializer); 
     static RosReaderOptions Deserialize(Deserializer& deserializer); 
-}; 
-
-struct RosReaderScanState {
-    ResizeableBuffer repeat_buf;
-    
-    uint32_t current_connection_id = 0;
-    size_t current_message_data_offset;
-    int32_t current_message_len = 0;
-}; 
+};  
 
 class RosBagReader {
 public: 
@@ -96,21 +88,39 @@ public:
     const string& GetFileName() const; 
 
     MultiFileReaderData             reader_data;
+
+    struct bag_offset_compare_t {
+        bool operator()(const RosBagTypes::chunk_t &left, const RosBagTypes::chunk_t &right) const {
+            return left.offset < right.offset;
+        }
+    }; 
+    typedef std::set<const RosBagTypes::chunk_t&, RosBagReader::bag_offset_compare_t> ChunkIndex;
+    const ChunkIndex& GetChunkIndex() const; 
+
+    typedef vector<std::reference_wrapper<ChunkIndex::const_reference>> ChunkList; 
+    struct ScanState {
+        RosBagReader::ChunkList                     chunk_list;
+        RosBagReader::ChunkList::const_iterator     current_chunk; 
+        
+        ResizeableBuffer                            read_buffer;
+        ResizeableBuffer                            decompression_buffer;
+
+        ResizeableBuffer*                           current_buffer = nullptr; 
+        idx_t                                       chunk_proccessed_bytes = 0; 
+        idx_t                                       chunk_uncompressed_size = 0; 
+    };
+
+    void InitializeScan(ScanState& scan); 
+    void Scan(ScanState& chunk_list, DataChunk& result);
 private: 
     struct TopicIndex {
-        struct bag_offset_compare_t {
-            bool operator()(const RosBagTypes::chunk_t &left, const RosBagTypes::chunk_t &right) const {
-                return left.offset < right.offset;
-            }
-        }; 
-
         // For now we'll take the embag strategy of using the bag offset to sort
         // the chunks.  Potentially it would be better going forward to sort the 
         // chunks by timestamp.  No matter what this would still probably
         // be chuck write timestamp and not MESSAGE timestamp 
-        std::set<const RosBagTypes::chunk_t&, bag_offset_compare_t> chunks; 
-        std::unordered_set<uint32_t>                                connection_ids; 
-        size_t                                                      message_cnt  = 0; 
+        ChunkIndex                      chunks; 
+        std::unordered_set<uint32_t>    connection_ids; 
+        size_t                          message_cnt  = 0; 
     }; 
 
     shared_ptr<RosBagMetadataCache> metadata;

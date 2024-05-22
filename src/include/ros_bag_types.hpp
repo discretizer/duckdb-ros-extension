@@ -70,7 +70,7 @@ struct RosBagTypes {
     uint32_t header_len = 0; 
     uint32_t data_len = 0; 
 
-    void decompress(const char* src, char *dst) const {
+    void decompress(const uint8_t* src, uint8_t *dst) const {
       if (compression == "lz4") {
         decompressLz4Chunk(src, dst);
       } else if (compression == "bz2") {
@@ -80,7 +80,7 @@ struct RosBagTypes {
       }
     }
 
-    void decompressLz4Chunk(const char* src, char *dst) const {
+    void decompressLz4Chunk(const uint8_t* src, uint8_t *dst) const {
       size_t src_bytes_left = data_len;
       size_t dst_bytes_left = uncompressed_size;
 
@@ -104,10 +104,10 @@ struct RosBagTypes {
       }
     };
 
-    void decompressBz2Chunk(const char* src, char *dst) const {
+    void decompressBz2Chunk(const uint8_t* src, uint8_t *dst) const {
       unsigned int dst_bytes_left = uncompressed_size;
-      char * source = const_cast<char *>(src);
-      const auto r = BZ2_bzBuffToBuffDecompress(dst, &dst_bytes_left, source, data_len, 0,0);
+      uint8_t * source = const_cast<uint8_t *>(src);
+      const auto r = BZ2_bzBuffToBuffDecompress(reinterpret_cast<char*>(dst), &dst_bytes_left, reinterpret_cast<char*>(source), data_len, 0,0);
       if (r != BZ_OK) {
         throw std::runtime_error("Failed decompress bz2 chunk, bz2 error code: " + std::to_string(r));
       }

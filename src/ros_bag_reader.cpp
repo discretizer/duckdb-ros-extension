@@ -4,6 +4,8 @@
 #include "message_def_parser.hpp"
 #include "ros_schema.hpp"
 
+#include "duckdb/common/shared_ptr.hpp"
+
 #include <string_view>
 #include <array>
 
@@ -68,6 +70,9 @@ LoadMetadata(Allocator &allocator, FileHandle &file_handle) {
     metadata->chunk_infos.reserve(chunk_count); 
     metadata->chunks.reserve(chunk_count); 
 
+    /**
+     * Read connection records. 
+    */
     file_handle.Seek(index_pos); 
     for (idx_t i = 0; i < connection_count; i++) {
         record_parser.Read(file_handle); 
@@ -128,7 +133,8 @@ LoadMetadata(Allocator &allocator, FileHandle &file_handle) {
     for (size_t i = 0; i < chunk_count; i++) {
         auto& info = metadata->chunk_infos[i];
 
-        // TODO: The chunk infos are not necessarily Revisit this logic if seeking back and forth across the file causes a slowdown
+        // TODO: The chunk infos are not necessarily
+        // Revisit this logic if seeking back and forth across the file causes a slowdown
         file_handle.Seek(info.chunk_pos); 
         record_parser.Read(file_handle, true); 
         RosBagTypes::chunk_t chunk; 
@@ -159,9 +165,7 @@ LoadMetadata(Allocator &allocator, FileHandle &file_handle) {
                 make_field("conn", connection_id), 
                 make_field("count", msg_count)
             ); 
-            // NOTE: It seems like it would be simpler to just do &chunk here right? WRONG.
-            //       C++ reuses the same memory location for the chunk variable for each loop, so
-            //       if you use &chunk, all `into_chunk` values will be exactly the same
+
             metadata->connections[connection_id].blocks.push_back(metadata->chunks.at(i)); 
             metadata->connections[connection_id].data.message_count += msg_count; 
         }
@@ -170,6 +174,8 @@ LoadMetadata(Allocator &allocator, FileHandle &file_handle) {
     }
     return make_shared<RosBagMetadataCache>(std::move(metadata), current_time);
 }
+
+
 
 RosBagReader::RosBagReader(ClientContext& context, RosReaderOptions options, string file_name):
     allocator(BufferAllocator::Get(context)), options(std::move(options))
@@ -222,11 +228,74 @@ size_t RosBagReader::NumMessages() const {
     return topic_index->message_cnt; 
 }
 
+const RosBagReader::ChunkIndex& RosBagReader::GetChunkIndex() const {
+    return topic_index->chunks; 
+}
+
+struct {
+    RosValue::ros_time_t timestamp; 
+    data_ptr_t msg_ptr; 
+}; 
+
+void RosBagReader::Scan(RosBagReader::ScanState& scan_state, DataChunk& result) {
+    for( auto chunk_iter = scan_state.current_chunk; chunk_iter != scan_state.chunk_list.cend(); chunk_iter++) {
+        auto chunk = chunk_iter->get();
+
+        // If we don't have a current buffer, lets create one and decompress the data into it if 
+        // neccessairy
+        if ((scan_state.current_buffer == nullptr) || 
+            (scan_state.current_buffer->len == 0)) {
+            scan_state.read_buffer.resize(allocator, chunk.data_len); 
+            file_handle->Read(scan_state.read_buffer.ptr, chunk.data_len, chunk.offset + chunk.header_len); 
+            if (chunk.compression != "none") {
+                scan_state.decompression_buffer.resize(allocator, chunk.uncompressed_size); 
+                chunk.decompress(scan_state.read_buffer.ptr, scan_state.decompression_buffer.ptr);
+                scan_state.read_buffer.inc(chunk.data_len);  
+                scan_state.current_buffer = &scan_state.decompression_buffer; 
+            } else {
+                scan_state.current_buffer = &scan_state.read_buffer; 
+            }
+        }
+        //Next lets create the return vector buffers.  We'll allocate enough space for the 
+        //maximum number of messages we expect. 
+
+
+        // Parse through the buffer reading i
+        while (scan_state.current_buffer->len != 0) {
+            RosBufferedRecordParser record(*scan_state.current_buffer); 
+            uint8_t op; 
+            uint32_t conn_id; 
+            RosValue::ros_time_t timestamp; 
+
+            readFields( record.Header(),
+                make_field("op", op), 
+                make_field("conn", conn_id),
+                make_field("time", timestamp) 
+            );
+            switch (RosBagTypes::op(op)) {
+                case RosBagTypes::op::MESSAGE_DATA: {
+                    if (topic_index->connection_ids.count(conn_id) == 0) {
+                        continue;
+                    }
+                    
+                }
+                case RosBagTypes::op::CONNECTION: {
+                    continue;
+                }
+                default: {
+                    throw std::runtime_error("Found unknown record type: " + std::to_string(static_cast<int>(header.op)));
+                }
+            }
+        }
+    }
+}
+
+
 void RosBagReader::InitializeSchema() {
     message_def = MakeMsgDef(options.topic); 
     
     // This flag is set to true if we successfully split the header field
-    // In this case we can ignore the heaer field when splitting the main message fields 
+    // In this case we can ignore the header field when splitting the main message fields 
     bool header_split = false; 
 
     // If splt header option is enabled and there is a header, add header fields to schema
@@ -251,7 +320,7 @@ void RosBagReader::InitializeSchema() {
     }
     // Convert each ros message field into schema 
     for (auto member : message_def->members()) {
-        if (member.index() == 0){ 
+        if (member.index() == 0) { 
             auto field = std::get<RosMsgTypes::FieldDef>(member); 
             // Ignore header field if we've already split it. 
             if (!(header_split && field.name() == "header")) {

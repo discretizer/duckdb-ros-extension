@@ -352,7 +352,7 @@ class RosValue::Pointer {
     shared_ptr<vector<RosValue>> base;
     size_t index;
   };
-  boost::variant<RosValue, vector_based_value_info_t> info_;
+  std::variant<RosValue, vector_based_value_info_t> info_;
 
  public:
   Pointer()
@@ -398,10 +398,10 @@ class RosValue::Pointer {
 
  private:
   const RosValue& operator*() const {
-    if (info_.which() == 0) {
-      return boost::get<RosValue>(info_);
+    if (info_.index() == 0) {
+      return std::get<RosValue>(info_);
     } else {
-      vector_based_value_info_t info = boost::get<vector_based_value_info_t>(info_);
+      vector_based_value_info_t info = std::get<vector_based_value_info_t>(info_);
       return info.base->at(info.index);
     }
   }

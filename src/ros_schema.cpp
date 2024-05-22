@@ -40,8 +40,6 @@ LogicalType primitiveToDuckType(const RosValue::Type& type) {
 LogicalType ConvertRosFieldType(const RosMsgTypes::FieldDef& def) {
     LogicalType duck_type; 
     if (def.type() == RosValue::Type::object) {
-        duck_type = primitiveToDuckType(def.type()); 
-    } else {
         child_list_t<LogicalType> children; 
         auto members = def.typeDefinition().members(); 
         children.reserve(members.size()); 
@@ -52,10 +50,14 @@ LogicalType ConvertRosFieldType(const RosMsgTypes::FieldDef& def) {
             }
         }
         duck_type = LogicalType::STRUCT(children); 
+    } else {
+        duck_type = primitiveToDuckType(def.type()); 
     }
     if (def.arraySize() > 0) {
         duck_type = LogicalType::ARRAY(duck_type); 
-    }
+    } else if (def.arraySize() == -1) {
+        duck_type = LogicalType::LIST(duck_type); 
+    } 
     return duck_type; 
 }
 }

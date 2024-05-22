@@ -48,7 +48,7 @@ public:
     }
 
     std::string_view Data() const {
-        return std::string_view(reinterpret_cast<const char *>(header.get()), static_cast<size_t>(header_size)); 
+        return std::string_view(reinterpret_cast<const char *>(data.get()), static_cast<size_t>(data_size)); 
     }
 
 private: 
@@ -60,6 +60,36 @@ private:
     AllocatedData data;
     idx_t data_size;  
 }; 
+
+class RosBufferedRecordParser {
+public: 
+    RosBufferedRecordParser(ByteBuffer& data) 
+    {
+        uint32_t header_len; 
+        uint32_t data_len; 
+
+        header_len = data.read<uint32_t>();
+        header_ptr = data.ptr; 
+        data.inc(header_len); 
+        data_len = data.read<uint32_t>(); 
+        data_ptr = data.ptr; 
+        data.inc(data_len); 
+    }
+
+    std::string_view Header() const {
+        return std::string_view(reinterpret_cast<const char *>(header_ptr), static_cast<size_t>(header_size)); 
+    }
+
+    std::string_view Data() const {
+        return std::string_view(reinterpret_cast<const char *>(data_ptr), static_cast<size_t>(data_size)); 
+    }
+private: 
+    data_ptr_t header_ptr;
+    idx_t header_size; 
+    data_ptr_t data_ptr; 
+    idx_t data_size; 
+}; 
+
 
 template <typename T> 
 std::pair<std::string_view, T&> make_field(std::string_view name, T& val){
@@ -74,6 +104,10 @@ void readField(const std::string_view& data, T& value) {
 void readField(const std::string_view& data, std::string& value) {
     value = data;
 } 
+
+void readField(const std::string_view& data, RosValue::ros_time_t& time) {
+    
+}
 
 template <class ... args>
 void readFields(const std::string_view& data, std::pair<std::string_view, args&> ... fields) {  
