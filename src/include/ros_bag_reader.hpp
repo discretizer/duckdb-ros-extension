@@ -9,7 +9,8 @@
 #include <duckdb/common/vector.hpp>
 #include <duckdb/common/helper.hpp>
 #include <duckdb/common/multi_file_reader.hpp>
-#include <duckdb/common/multi_file_reader_options.hpp>
+#include <duckdb/common/serializer/serializer.hpp>
+#include <duckdb/common/serializer/deserializer.hpp>
 
 #include <duckdb/main/client_context.hpp>
 #endif 
@@ -17,6 +18,7 @@
 #include "ros_value.hpp"
 #include "ros_bag_types.hpp"
 #include "ros_msg_types.hpp"
+#include "ros_reader_options.hpp"
 #include "resizable_buffer.hpp"
 
 namespace duckdb{
@@ -44,31 +46,17 @@ const RosMsgTypes::primitive_type_map_t RosMsgTypes::FieldDef::primitive_type_ma
 
 class RosBagMetadata; 
 class RosBagMetadataCache;
-
-/// @brief Options for the ROS input
-/// This class should be in charge of parsing inputs for the ros reader function and
-/// 
-struct RosReaderOptions {
-    explicit RosReaderOptions() {
-    }
-
-    /// @brief  name of the topic to extract as a table from the bag. 
-    /// This is the first positional option of the command. 
-    string topic;
-
-    /// @brief Split the header field (i.e std_msgs/Header). If true the header will 
-    /// be split into independent columns for each header value.  
-    /// TODO: potentially change how column splitting works.
-    bool split_header = true; 
-
-    MultiFileReaderOptions file_options;
-public:  
-    void Serialize(Serializer &serializer); 
-    static RosReaderOptions Deserialize(Deserializer& deserializer); 
-};  
-
 class RosBagReader {
-public: 
+public:
+    struct ChunkIndex {
+        size_t idx; 
+        size_t message_cnt; 
+        bool operator() (const ChunkIndex &c1, const ChunkIndex &c2){
+            return (c1.idx < c2.idx); 
+        }
+    }; 
+    using ChunkSet = set<ChunkIndex>;
+
     RosBagReader(ClientContext &context, RosReaderOptions options, string file_name);
     RosBagReader(ClientContext &context, RosReaderOptions options, shared_ptr<RosBagMetadataCache> metadata);
 
@@ -82,45 +70,47 @@ public:
     size_t NumChunks() const; 
     size_t NumMessages() const; 
 
+    const ChunkSet& GetChunkSet() const;
+    const RosBagTypes::chunk_t& GetChunk(size_t idx) const; 
+
     const vector<LogicalType>& GetTypes() const;
     const vector<string>&  GetNames() const; 
-
     const string& GetFileName() const; 
 
     MultiFileReaderData             reader_data;
-
-    struct bag_offset_compare_t {
-        bool operator()(const RosBagTypes::chunk_t &left, const RosBagTypes::chunk_t &right) const {
-            return left.offset < right.offset;
-        }
-    }; 
-    typedef std::set<const RosBagTypes::chunk_t&, RosBagReader::bag_offset_compare_t> ChunkIndex;
-    const ChunkIndex& GetChunkIndex() const; 
-
-    typedef vector<std::reference_wrapper<ChunkIndex::const_reference>> ChunkList; 
+    
     struct ScanState {
-        RosBagReader::ChunkList                     chunk_list;
-        RosBagReader::ChunkList::const_iterator     current_chunk; 
-        
+        ScanState(): 
+            read_buffer{}, 
+            decompression_buffer{}, 
+            current_buffer{nullptr},
+            chunks{}, 
+            chunk_proccessed_bytes{0}
+        {}
+
         ResizeableBuffer                            read_buffer;
         ResizeableBuffer                            decompression_buffer;
+        ResizeableBuffer*                           current_buffer;
 
-        ResizeableBuffer*                           current_buffer = nullptr; 
-        idx_t                                       chunk_proccessed_bytes = 0; 
-        idx_t                                       chunk_uncompressed_size = 0; 
+        set<idx_t>                                  chunks; 
+        idx_t                                       expected_message_count;
+        idx_t                                       chunk_proccessed_bytes;
+
+        void Serialize(Serializer &serializer) const;
+	    static unique_ptr<ScanState> Deserialize(Deserializer &deserializer);
     };
 
-    void InitializeScan(ScanState& scan); 
-    void Scan(ScanState& chunk_list, DataChunk& result);
+    void InitializeScan(RosBagReader::ScanState& scan, ChunkSet::const_iterator& current_chunk); 
+    void Scan(ScanState& scan, DataChunk& result);
 private: 
     struct TopicIndex {
         // For now we'll take the embag strategy of using the bag offset to sort
         // the chunks.  Potentially it would be better going forward to sort the 
         // chunks by timestamp.  No matter what this would still probably
         // be chuck write timestamp and not MESSAGE timestamp 
-        ChunkIndex                      chunks; 
-        std::unordered_set<uint32_t>    connection_ids; 
-        size_t                          message_cnt  = 0; 
+        ChunkSet                   chunk_set;  
+        unordered_set<uint32_t>    connection_ids; 
+        size_t                     message_cnt  = 0; 
     }; 
 
     shared_ptr<RosBagMetadataCache> metadata;

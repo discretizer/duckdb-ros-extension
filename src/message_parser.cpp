@@ -9,7 +9,7 @@ const RosValue::Pointer MessageParser::parse() {
   // The lowest number of RosValues occurs when we have a message with only doubles in a single type.
   // The number of RosValues in this case is the number of doubles that can fit in our buffer,
   // plus one for the RosValue object that will point to all the doubles.
-  ros_values->reserve(message_buffer->size() / sizeof(double) + 1);
+  ros_values->reserve(message_buffer.size() / sizeof(double) + 1);
   ros_values->emplace_back(msg_def.fieldIndexes());
   ros_values_offset = 1;
   initObject(0, msg_def);
@@ -73,7 +73,7 @@ void MessageParser::emplaceField(const RosMsgTypes::FieldDef &field) {
 void MessageParser::initArray(size_t array_offset, const RosMsgTypes::FieldDef &field) {
   size_t array_length;
   if (field.arraySize() == -1) {
-    array_length = *reinterpret_cast<uint32_t*>(&message_buffer->at(message_buffer_offset));
+    array_length = *reinterpret_cast<const uint32_t*>(&message_buffer.at(message_buffer_offset));
     message_buffer_offset += sizeof(uint32_t);
   } else {
     array_length = static_cast<uint32_t>(field.arraySize());

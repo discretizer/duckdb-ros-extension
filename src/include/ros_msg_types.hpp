@@ -231,4 +231,5 @@ class RosMsgTypes{
     std::unordered_map<std::string, EmbeddedMsgDef> embedded_definition_map_;
   };
 };
+
 }

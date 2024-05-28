@@ -74,6 +74,7 @@
         "vector": "cpp",
         "algorithm": "cpp",
         "*.ipp": "cpp",
-        "__assert": "cpp"
+        "__assert": "cpp",
+        "filesystem": "cpp"
     }
 }

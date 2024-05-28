@@ -4,6 +4,7 @@
 #include <boost/fusion/include/adapt_struct.hpp>
 
 
+
 // Parser structures and binding - must exist in global namespace
 BOOST_FUSION_ADAPT_STRUCT(
     duckdb::RosMsgTypes::FieldDef::parseable_info_t,
@@ -111,7 +112,7 @@ struct ros_msg_grammar : qi::grammar<Iterator, RosMsgTypes::MsgDef::parseable_in
   qi::rule<Iterator, RosMsgTypes::member_parseable_info_t(), Skipper> member;
 };
 
-std::shared_ptr<RosMsgTypes::MsgDef> ParseMsgDef(const string &def, const string& name) {
+shared_ptr<RosMsgTypes::MsgDef> ParseMsgDef(const string &def, const string& name) {
   string::const_iterator iter = def.begin();
   const string::const_iterator end = def.end();
 
@@ -122,7 +123,7 @@ std::shared_ptr<RosMsgTypes::MsgDef> ParseMsgDef(const string &def, const string
   const bool r = phrase_parse(iter, end, grammar, skipper, ast);
 
   if (r && iter == end) {
-    return std::make_shared<RosMsgTypes::MsgDef>(ast, name);
+    return make_shared_ptr<RosMsgTypes::MsgDef>(ast, name);
   }
 
   const string::const_iterator some = iter + std::min(30, int(end - iter));

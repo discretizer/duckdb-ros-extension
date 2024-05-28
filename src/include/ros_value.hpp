@@ -202,7 +202,7 @@ class RosValue {
  private:
   struct _array_identifier {};
  public:
-  RosValue(const Type type, const shared_ptr<vector<char>>& message_buffer, const size_t offset)
+  RosValue(const Type type, std::string_view message_buffer, const size_t offset)
     : type_(type)
     , info_(std::in_place_type<primitive_info_t>, offset, message_buffer )
   {
@@ -228,7 +228,7 @@ class RosValue {
     , info_(std::in_place_type<array_info_t>)
   {
   }
-  RosValue(const Type element_type, const shared_ptr<vector<char>>& message_buffer)
+  RosValue(const Type element_type, std::string_view message_buffer)
     : type_(Type::primitive_array)
     , info_(std::in_place_type<primitive_array_info_t>, element_type, message_buffer)
   {
@@ -280,6 +280,7 @@ class RosValue {
   size_t getPrimitiveArrayRosValueBufferSize() const;
 
   unordered_map<string, Pointer> getObjects() const;
+  const std::unordered_map<std::string, size_t>& RosValue::getObjectIndices() const;
   vector<Pointer> getValues() const;
 
   string toString(const string &path = "") const;
@@ -291,16 +292,16 @@ class RosValue {
 
  private:
   struct primitive_info_t {
-    primitive_info_t(size_t off, const shared_ptr<vector<char>> &buf)
+    primitive_info_t(size_t off, std::string_view buf)
       : offset(off)
       , message_buffer(buf)
     {}
     size_t offset; 
-    shared_ptr<vector<char>> message_buffer;
+    std::string_view message_buffer;
   };
 
   struct primitive_array_info_t {
-    primitive_array_info_t(const Type element_type, const shared_ptr<vector<char>>& message_buffer)
+    primitive_array_info_t(const Type element_type, std::string_view message_buffer)
       : element_type(element_type)
       , message_buffer(message_buffer)
     {
@@ -309,7 +310,7 @@ class RosValue {
     Type element_type;
     size_t offset;
     size_t length;
-    shared_ptr<vector<char>> message_buffer;
+    std::string_view message_buffer;
   };
 
   struct array_info_t {
@@ -360,13 +361,13 @@ class RosValue::Pointer {
   {
   }
 
-  Pointer(const std::weak_ptr<vector<RosValue>>& base)
+  Pointer(const weak_ptr<vector<RosValue>>& base)
     : Pointer(base, 0)
   {
   }
 
-  Pointer(const std::weak_ptr<vector<RosValue>>& base, size_t index)
-    : Pointer(base.lock(), index)
+  Pointer(const weak_ptr<vector<RosValue>>& base, size_t index)
+    : info_(vector_based_value_info_t({base.lock(), index}))
   {
   }
 
@@ -375,7 +376,7 @@ class RosValue::Pointer {
   {
   }
 
-  Pointer(const RosValue::Type type, const shared_ptr<vector<char>>& message_buffer, const size_t offset)
+  Pointer(const RosValue::Type type, std::string_view message_buffer, const size_t offset)
     : info_(RosValue(type, message_buffer, offset))
   {
   }

@@ -114,9 +114,22 @@ struct RosBagTypes {
     }
   };
 
+
+  // Stores the number of connection messages available in each chunk 
+  // We can use this information later to figure out how many chuncks 
+  // should chunk. 
+  // TODO: maybe we should store the message receive timestamps for filtering 
+  // messages. Not that the recieve timestamps ARE NOT the same as the message 
+  // header timestamp which are generated at send time.  
+
+  struct connection_block_t {
+    size_t chunk_idx; 
+    size_t message_count; 
+  }; 
+
   struct connection_record_t {
     uint32_t id;
-    vector<const chunk_t&> blocks;
+    vector<connection_block_t> blocks;
     string topic;
     connection_data_t data;
   };

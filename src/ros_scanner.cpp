@@ -15,10 +15,14 @@ namespace duckdb {
 struct RosGlobalState;
 struct RosLocalState : public LocalTableFunctionState {
 	shared_ptr<RosBagReader> reader;
-	vector<std::reference_wrapper<RosBagReader::ChunkIndex::reference>> chunk_list; 
+	RosBagReader::ScanState scan_state; 
 };
 
 struct RosBindData : public TableFunctionData {
+	unique_ptr<MultiFileList> file_list;
+	unique_ptr<MultiFileReader> multi_file_reader;
+	MultiFileReaderBindData reader_bind;
+	
 	shared_ptr<RosBagReader> initial_reader;
 	RosReaderOptions ros_options;
 
@@ -30,30 +34,36 @@ struct RosBindData : public TableFunctionData {
 
 	/// @brief Read chunck count.  This is used for updating the progress. 
 	atomic<idx_t> chunk_count;
-
-	vector<string> files;
-	MultiFileReaderBindData reader_bind;
-
-
-	// Initialization function.  This function is used by 
-	void Initialize(shared_ptr<RosBagReader> reader) 
-	 {
-		chunk_count = 0; 
-		initial_reader = std::move(reader);
-		ros_options = initial_reader->Options();
-
-		initial_file_cardinality = initial_reader->NumMessages(); 
-		initial_file_chunk_count = initial_reader->NumChunks(); 
-	}
+	
 };
 
 enum class RosFileState : uint8_t { UNOPENED, OPENING, OPEN, CLOSED };
 
+struct RosFileReaderData {
+	// Create data for an unopened file
+	explicit RosFileReaderData(const string &file_to_be_opened)
+	    : reader(nullptr), file_state(RosFileState::UNOPENED), file_mutex(make_uniq<mutex>()),
+	      file_to_be_opened(file_to_be_opened) {
+	}
+	// Create data for an existing reader
+	explicit RosFileReaderData(shared_ptr<RosBagReader> reader_p)
+	    : reader(std::move(reader_p)), file_state(RosFileState::OPEN), file_mutex(make_uniq<mutex>()) {
+	}
+
+	//! Currently opened reader for the file
+	shared_ptr<RosBagReader> reader;
+	//! Flag to indicate the file is being opened
+	RosFileState file_state;
+	//! Mutexes to wait for the file when it is being opened
+	unique_ptr<mutex> file_mutex;
+
+	//! (only set when file_state is UNOPENED) the file to be opened
+	string file_to_be_opened;
+};
 
 /// @brief ROS Global reader state.  Ideally we'd split this bag reading into 
 /// multiple threads and leverage some chunk indexing and parallelization to 
 /// increase efficiency. 
-
 /// We're going to attempt to use appropriate encapsulation for this class 
 /// even though the underlying API really doesn't make this easy (or even possible)
 class RosGlobalState : public GlobalTableFunctionState {
@@ -61,12 +71,20 @@ public:
 
 	// 
 	RosGlobalState(ClientContext& context, const RosBindData &bind_data, const vector<column_t>& col_ids):
-		initial_reader(bind_data.initial_reader), readers(bind_data.files.size(), nullptr), 
-		file_states(bind_data.files.size(), RosFileState::UNOPENED),
-		file_mutexes(make_uniq_array<mutex>(bind_data.files.size())), 
+		initial_reader(bind_data.initial_reader), 
+		readers(), 
+		file_list_scan(), 
+		multi_file_reader_state(bind_data.multi_file_reader->InitializeGlobalState(
+		    context, bind_data.ros_options.file_options, bind_data.reader_bind, *bind_data.file_list,
+		    bind_data.initial_reader->GetTypes(), bind_data.initial_reader->GetNames(), col_ids)),
 		column_ids(col_ids),
 		max_threads(MaxThreadsHelper(context, bind_data))
 	{
+		readers.reserve(bind_data.file_list->GetTotalFileCount()); 
+		for (auto file: bind_data.file_list->Files()) {
+			readers.emplace_back(file); 
+		}
+		bind_data.file_list->InitializeScan(file_list_scan); 
 	}
 	
 	/// *** Overridden functions ** 
@@ -77,37 +95,33 @@ public:
 	}
 
 	/// Populate the next local state from the 
-	bool GetNext(ClientContext &context, const RosBindData &bind_data, RosLocalState& scan_state) 
+	bool GetNext(ClientContext &context, const RosBindData &bind_data, RosLocalState& local_state) 
 	{
 		unique_lock global_lock(lock); 
-
 		std::optional<bool> result; 
 		do {
 			if (error_opening_file) {
 				result = false; 
-			} else if (file_index >= readers.size()) {
+			} else if (file_index >= readers.size() && ResizeFiles(bind_data)) {
 				result = false; 
-			} else if (file_states[file_index] == RosFileState::OPEN) {
-				if (index_pos != readers[file_index]->GetChunkIndex().cend()) {
-					scan_state.reader = readers[file_index];
-
-					decltype(scan_state.chunk_list) chunk_list{*index_pos};
-					scan_state.chunk_list = std::move(chunk_list);
-					index_pos++; 
-
-					result = true; 
+			} else if (readers[file_index].file_state == RosFileState::OPEN) {
+				if (chunk_index != readers[file_index].reader->GetChunkSet().cend()) {
+					local_state.reader = readers[file_index].reader;
+					// dequeue chunks until we're close too (but hopefullu still below the vector size)
+					local_state.reader->InitializeScan(local_state.scan_state, chunk_index); 
 				} else {
-					file_states[file_index] = RosFileState::CLOSED; 
-					readers[file_index] = nullptr; 
+					readers[file_index].file_state = RosFileState::CLOSED; 
+					readers[file_index].reader = nullptr; 
 					file_index++; 
-					if (file_index >= bind_data.files.size()) {
+
+					if (file_index >= bind_data.file_list->GetTotalFileCount()) {
 						result = false; 
 					}
 				}
-			} else if (TryOpenNextFile(context, bind_data, scan_state, global_lock)) {
+			} else if (TryOpenNextFile(context, bind_data, local_state, global_lock)) {
 				; // Statement intentionally blank 
 			} else {
-				if (file_states[file_index] == RosFileState::OPENING) {
+				if (readers[file_index].file_state == RosFileState::OPENING) {
 					WaitForFile(global_lock); 
 				}
 			}
@@ -117,52 +131,71 @@ public:
 
 private: 
 	static const idx_t MaxThreadsHelper( ClientContext& context, const RosBindData &bind_data) {
-		if (bind_data.files.size() > 1) {
+		if (bind_data.file_list->GetTotalFileCount() > 1) {
 			return TaskScheduler::GetScheduler(context).NumberOfThreads();
 		}
 		return MaxValue(bind_data.initial_file_chunk_count, (idx_t)1);
 	}
 
+	// Queries the metadataprovider for another file to scan, updating the files/reader lists in the process.
+	// Returns true if resized
+	bool ResizeFiles(const RosBindData &bind_data) {
+		string scanned_file;
+		if (!bind_data.file_list->Scan(file_list_scan, scanned_file)) {
+			return false;
+		}
+
+		// Push the file in the reader data, to be opened later
+		readers.emplace_back(scanned_file);
+		return true;
+	}
+
 	void WaitForFile(unique_lock<mutex>& global_lock) {
 		bool done = false; 
 		while (!done) {
+			auto& file_mutex = *readers[file_index].file_mutex; 
+
 			global_lock.unlock();
-			unique_lock<mutex> current_file_lock(file_mutexes[file_index]); 
+			unique_lock<mutex> current_file_lock(file_mutex); 
 			global_lock.lock(); 
 
 			done = (file_index >= readers.size()) || 
-				   (file_states[file_index] != RosFileState::OPENING) || 
+				   (readers[file_index].file_state != RosFileState::OPENING) || 
 				   error_opening_file; 
 		}
 	}
 
-	bool TryOpenNextFile(ClientContext& context, const RosBindData& bind_data, RosLocalState& scan_data, unique_lock<mutex>& global_lock) {
-		const auto num_threads = TaskScheduler::GetScheduler(context).NumberOfThreads(); 
-		const auto file_index_limit = MinValue<idx_t>(file_index + num_threads, bind_data.files.size()); 
+	bool TryOpenNextFile(ClientContext& context, const RosBindData& bind_data, RosLocalState& local_state, unique_lock<mutex>& global_lock) {
+		const auto num_threads = TaskScheduler::GetScheduler(context).NumberOfThreads();
+		const auto file_index_limit =
+		    MinValue<idx_t>(file_index + num_threads, readers.size());
+		
+		for(idx_t i = file_index; i < file_index_limit; i++) {
+			if (readers[i].file_state == RosFileState::UNOPENED) {
+				auto &current_reader_data = readers[i];
 
-		for (idx_t i = file_index; i < file_index_limit; i++ ) {
-			if (file_states[i] == RosFileState::UNOPENED) {
-				string file = bind_data.files[i]; 
-				file_states[i] = RosFileState::OPENING; 
+				current_reader_data.file_state = RosFileState::OPENING; 
 				auto ros_options = initial_reader->Options(); 
 
+				auto &current_file_lock = *current_reader_data.file_mutex;
+
 				global_lock.unlock(); 
-				unique_lock<mutex> file_lock(file_mutexes[i]); 
-				std::shared_ptr<RosBagReader> reader; 
+				unique_lock<mutex> file_lock(current_file_lock); 
+				shared_ptr<RosBagReader> reader; 
 				try {
-					reader = make_shared<RosBagReader>(context, file, ros_options); 
-					MultiFileReader::InitializeReader(*reader, ros_options.file_options, bind_data.reader_bind, 
+					reader = make_shared_ptr<RosBagReader>(context, current_reader_data.file_to_be_opened, ros_options); 
+					bind_data.multi_file_reader->InitializeReader(*reader, ros_options.file_options, bind_data.reader_bind, 
 													  initial_reader->GetTypes(), initial_reader->GetNames(), 
-													  column_ids, filters, initial_reader->GetFileName(), context); 
+													  column_ids, filters, initial_reader->GetFileName(), context, multi_file_reader_state); 
 				} catch (...) {
 					global_lock.lock();
 					error_opening_file = true;
 					throw;
 				}
 				global_lock.lock();
-				readers[i] = reader;
-				file_states[i] = RosFileState::OPEN;
-				index_pos = reader->GetChunkIndex().cbegin(); 
+
+				current_reader_data.reader = reader; 
+				current_reader_data.file_state = RosFileState::OPEN;
 
 				return true;
 			}
@@ -177,17 +210,17 @@ public:
     //! Global state mutex lock
 	mutex lock;
 
-	//! The initial reader from the bind pha
+	//! The initial reader from the bind phase
 	shared_ptr<RosBagReader> initial_reader;
 
 	//! Currently opened readers
-	vector<shared_ptr<RosBagReader>> readers;
-	
-	//! Flag to indicate a file is being opened
-	vector<RosFileState> file_states; 
-	
-	//! Mutexes to wait for a file that is currently being opened
-	unique_ptr<mutex[]> file_mutexes;
+	vector<RosFileReaderData> readers;
+
+	//! File list scan options	
+	MultiFileListScanData file_list_scan;
+
+	//! Multi-file rader global state
+	unique_ptr<MultiFileReaderGlobalState> multi_file_reader_state;
 	
 	//! Signal to other threads that a file failed to open, letting every thread abort.
 	bool error_opening_file = false;
@@ -195,8 +228,8 @@ public:
 	//! Index of file currently up for scanning
 	atomic<idx_t> file_index;
 
-	//! Current index location to read 
-	RosBagReader::ChunkIndex::const_iterator index_pos;  
+	//! Current chunk index location to read 
+	RosBagReader::ChunkSet::const_iterator chunk_index;  
 
 	//! Current column_ids (past in from input on creation)
 	//! Used in MultiFileReader::InitializeReader
@@ -210,16 +243,18 @@ public:
 	idx_t max_threads; 
 }; 
 
-static unique_ptr<FunctionData> RosBind(ClientContext &context, TableFunctionBindInput &input, vector<LogicalType> &return_types, vector<string> &names) {
+static unique_ptr<FunctionData> RosBagBind(ClientContext &context, TableFunctionBindInput &input, vector<LogicalType> &return_types, vector<string> &names) {
 	// Create output result
 	auto result = make_uniq<RosBindData>();
-	
+	auto multi_file_reader = MultiFileReader::Create(input.table_function); 
+
 	// Parse input options 
-	auto files = MultiFileReader::GetFileList(context, input.inputs[0], "RosBag"); 
+	auto file_list = multi_file_reader->CreateFileList(context, input.inputs[0]); 
+
 	RosReaderOptions ros_options;
 	ros_options.topic = StringValue::Get(input.inputs[1]); 
 	for ( auto& kv: input.named_parameters) {
-		if (MultiFileReader::ParseOption(kv.first, kv.second, ros_options.file_options, context)) {
+		if (multi_file_reader->ParseOption(kv.first, kv.second, ros_options.file_options, context)) {
 			continue; 
 		}
 		auto loption = StringUtil::Lower(kv.first); 
@@ -227,46 +262,54 @@ static unique_ptr<FunctionData> RosBind(ClientContext &context, TableFunctionBin
 			ros_options.split_header = BooleanValue::Get(kv.second); 
 		}
 	}
-	ros_options.file_options.AutoDetectHivePartitioning(files, context); 
+	ros_options.file_options.AutoDetectHivePartitioning(*file_list, context); 
 	if (ros_options.file_options.union_by_name) {
 		throw BinderException("RosBag reading doesn't currently support union_by_name"); 
 	}
 
 	// Create initial reader.  This should initialize the schema.
-	auto initial_reader = make_shared<RosBagReader>(context, ros_options, files[0]);
+	auto initial_reader = make_shared_ptr<RosBagReader>(context, ros_options, file_list->GetFirstFile());
+	ros_options.split_header = initial_reader->Options().split_header; 
 
 	std::copy(initial_reader->GetNames().cbegin(), initial_reader->GetNames().cend(), names.end());
 	std::copy(initial_reader->GetTypes().cbegin(), initial_reader->GetTypes().cend(), return_types.end()); 
 
-	result->reader_bind = MultiFileReader::BindOptions(ros_options.file_options, files, return_types, names ); 
+	multi_file_reader->BindOptions(ros_options.file_options, *file_list, return_types, names, result->reader_bind ); 
+	 
+	result->multi_file_reader=std::move(multi_file_reader); 
+	result->file_list = std::move(file_list);
+	result->initial_file_chunk_count = initial_reader->GetChunkSet().size(); 
+	result->initial_file_cardinality = initial_reader->NumMessages(); 
+	result->ros_options = ros_options;  
+	
 	return std::move(result); 
 }
 
 
-static unique_ptr<GlobalTableFunctionState> ReadRosBagInitGlobal(ClientContext &context, TableFunctionInitInput &input) {
+static unique_ptr<GlobalTableFunctionState> RosBagInitGlobal(ClientContext &context, TableFunctionInitInput &input) {
 	auto &bind_data = input.bind_data->Cast<RosBindData>();
 
-	if (bind_data.files.empty()) {
+	if (bind_data.file_list->IsEmpty()) {
 		// This can happen when a filename based filter pushdown has eliminated all possible files for this scan.
 		return nullptr;
 	}
 	return make_uniq<RosGlobalState>(context, bind_data, input.column_ids);
 }
 
-static double RosProgress(ClientContext &context, const FunctionData *bind_data_p, 
+static double RosBagProgress(ClientContext &context, const FunctionData *bind_data_p, 
 	const GlobalTableFunctionState *global_state) {
 	
 	auto &bind_data = bind_data_p->Cast<RosBindData>();
 	auto &gstate = global_state->Cast<RosGlobalState>();
-	if (bind_data.files.empty()) {
+	if (bind_data.file_list->IsEmpty()) {
 		return 100.0;
 	}
 	if (bind_data.initial_file_cardinality == 0) {
-		return (100.0 * (gstate.file_index + 1)) / bind_data.files.size();
+		return (100.0 * (gstate.file_index + 1)) / bind_data.file_list->GetTotalFileCount();
 	}
 	auto percentage = MinValue<double>(
 	    100.0, (bind_data.initial_file_chunk_count * STANDARD_VECTOR_SIZE * 100.0 / bind_data.initial_file_cardinality));
-	return (percentage + 100.0 * gstate.file_index) / bind_data.files.size();
+	return (percentage + 100.0 * gstate.file_index) / bind_data.file_list->GetTotalFileCount();
 }
 
 static unique_ptr<LocalTableFunctionState> RosBagInitLocal(ExecutionContext &context, TableFunctionInitInput &input,
@@ -282,7 +325,7 @@ static unique_ptr<LocalTableFunctionState> RosBagInitLocal(ExecutionContext &con
 	return std::move(result); 
 }
 
-static void RosScanImplementation(ClientContext &context, TableFunctionInput &data_p, DataChunk &output) {
+static void RosBagScanImplementation(ClientContext &context, TableFunctionInput &data_p, DataChunk &output) {
     if (!data_p.local_state) {
         return;  
     }
@@ -291,12 +334,23 @@ static void RosScanImplementation(ClientContext &context, TableFunctionInput &da
 
 	auto &bind_data = data_p.bind_data->CastNoConst<RosBindData>();
 	do {
-		data.reader->Scan()
-	}
+		data.reader->Scan(data.scan_state, output); 
+		bind_data.multi_file_reader->FinalizeChunk(context, bind_data.reader_bind, data.reader->reader_data,
+				                                   output, gstate.multi_file_reader_state);
+
+		if (output.size() > 0) {
+			return;
+		}
+		if (!gstate.GetNext(context, bind_data, data)) {
+			return;
+		}
+	} while(true); 
 }
 
 static TableFunctionSet GetFunctionSet() {
-    TableFunction table_function("ros_scan", {LogicalType::VARCHAR}, RosScanImplementation, RosScanBind)
+    TableFunction table_function("ros_scan", {LogicalType::VARCHAR}, RosBagScanImplementation, RosBagBind, RosBagInitGlobal, RosBagInitLocal); 
+	table_function.table_scan_progress = RosBagProgress; 
+	table_function
 }
 
 

@@ -109,6 +109,13 @@ std::unordered_map<std::string, RosValue::Pointer> RosValue::getObjects() const 
   return objects;
 }
 
+const std::unordered_map<std::string, size_t>& RosValue::getObjectIndices() const {
+  if (type_ != Type::object) {
+    throw std::runtime_error("Cannot getObjects of a non-object RosValue");
+  }
+  return *std::get<object_info_t>(info_).field_indexes;
+}
+
 vector<RosValue::Pointer> RosValue::getValues() const {
   if (type_ != Type::object && type_ != Type::array && type_ != Type::primitive_array) {
     throw std::runtime_error("Cannot getValues of a non object or array RosValue");
