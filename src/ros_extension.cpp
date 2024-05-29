@@ -10,18 +10,15 @@
 #include "duckdb/main/extension_util.hpp"
 #include <duckdb/parser/parsed_data/create_scalar_function_info.hpp>
 
-// OpenSSL linked through vcpkg
-#include <openssl/opensslv.h>
-
 namespace duckdb {
 
 /**
-inline void QuackScalarFun(DataChunk &args, ExpressionState &state, Vector &result) {
+inline void RosScalarFun(DataChunk &args, ExpressionState &state, Vector &result) {
     auto &name_vector = args.data[0];
     UnaryExecutor::Execute<string_t, string_t>(
 	    name_vector, result, args.size(),
 	    [&](string_t name) {
-			return StringVector::AddString(result, "Quack "+name.GetString()+" 🐥");;
+			return StringVector::AddString(result, "Ros "+name.GetString()+" 🐥");;
         });
 }
 **/
@@ -29,8 +26,8 @@ inline void QuackScalarFun(DataChunk &args, ExpressionState &state, Vector &resu
 static void LoadInternal(DatabaseInstance &instance) {
 
     // Register a scalar function
-    //auto quack_scalar_function = ScalarFunction("quack", {LogicalType::VARCHAR}, LogicalType::VARCHAR, QuackScalarFun);
-    //ExtensionUtil::RegisterFunction(instance, quack_scalar_function);
+    //auto ros_scalar_function = ScalarFunction("ros", {LogicalType::VARCHAR}, LogicalType::VARCHAR, RosScalarFun);
+    //ExtensionUtil::RegisterFunction(instance, ros_scalar_function);
 
     auto scan_fun = RosScanFunction::GetFunctionSet();
 	scan_fun.name = "read_rosbag";

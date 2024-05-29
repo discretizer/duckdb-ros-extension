@@ -1,0 +1,18 @@
+# name: test/sql/ros.test
+# description: test ros extension
+# group: [ros]
+
+# Before we load the extension, this will fail
+statement error
+SELECT ros('Sam');
+----
+Catalog Error: Scalar Function with name ros does not exist!
+
+# Require statement will ensure this test is run with this extension loaded
+require ros
+
+# Confirm the extension works
+query I
+SELECT ros('Sam');
+----
+Ros Sam 🐥
