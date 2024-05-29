@@ -220,13 +220,19 @@ RosBagReader::RosBagReader(ClientContext& context, RosReaderOptions options, str
 			ObjectCache::GetObjectCache(context).Put(file_name, metadata);
 		}
 	}
-    InitializeSchema(); 
+    if (options.topic != "") {
+        InitializeSchema();
+        topic_index = MakeTopicIndex(options.topic);  
+    }
 }
 
 RosBagReader::RosBagReader(ClientContext &context, RosReaderOptions options, shared_ptr<RosBagMetadataCache> metadata): 
      metadata(std::move(metadata)), options(std::move(options)), allocator(BufferAllocator::Get(context))
 {
-    InitializeSchema(); 
+    if (options.topic != "") {
+        InitializeSchema();
+        topic_index = MakeTopicIndex(options.topic);  
+    }
 }
 
 RosBagReader::~RosBagReader() {
