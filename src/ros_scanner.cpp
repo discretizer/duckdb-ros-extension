@@ -11,6 +11,8 @@
 #include "ros_scanner.hpp"
 #include "ros_bag_reader.hpp"
 
+#include <optional> 
+
 namespace duckdb {
 
 struct RosGlobalState;

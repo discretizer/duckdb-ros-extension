@@ -202,7 +202,7 @@ LoadMetadata(Allocator &allocator, FileHandle &file_handle) {
 RosBagReader::RosBagReader(ClientContext& context, RosReaderOptions options, string file_name):
     allocator(BufferAllocator::Get(context)), options(std::move(options))
 {
-	file_handle = FileSystem::GetFileSystem(context).OpenFile(file_name, FileFlags::FILE_FLAGS_READ);
+	file_handle = FileSystem::GetFileSystem(context).OpenFile(file_name, FileOpenFlags::FILE_FLAGS_READ);
 	if (!file_handle->CanSeek()) {
 		throw NotImplementedException(
 		    "Reading ros bags files from a FIFO stream is not supported and cannot be efficiently supported since "
