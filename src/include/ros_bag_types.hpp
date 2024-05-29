@@ -125,6 +125,10 @@ struct RosBagTypes {
   struct connection_block_t {
     size_t chunk_idx; 
     size_t message_count; 
+
+    connection_block_t(size_t idx, size_t cnt) : 
+      chunk_idx(idx), message_count(cnt) {
+    }
   }; 
 
   struct connection_record_t {

@@ -19,7 +19,7 @@ class MessageParser {
     const RosMsgTypes::MsgDef& msg_def
   ):  message_buffer(buffer),
       message_buffer_offset(0), 
-      ros_values(make_shared<vector<RosValue>>()), 
+      ros_values(make_shared_ptr<vector<RosValue>>()), 
       ros_values_offset(0), 
       msg_def(msg_def)
   {

@@ -4,10 +4,15 @@
 #include <cstring>
 #include <variant>
 
+#include <duckdb.hpp>
+
+#ifndef DUCKDB_AMALGAMATION
 #include <duckdb/common/string.hpp>
 #include <duckdb/common/unordered_map.hpp>
 #include <duckdb/common/vector.hpp>
 #include <duckdb/common/pair.hpp>
+#include <duckdb/common/shared_ptr.hpp>
+#endif
 
 #include "span.hpp"
 
@@ -188,7 +193,7 @@ class RosValue {
       throw std::runtime_error("Cannot iterate over the items of a RosValue that is not an object");
     }
 
-    return RosValue::const_iterator<IteratorReturnType, std::unordered_map<std::string, size_t>::const_iterator>(*this, object_info_.field_indexes->cbegin());
+    return RosValue::const_iterator<IteratorReturnType, std::unordered_map<std::string, size_t>::const_iterator>(*this, std::get<object_info_t>(info_).field_indexes->cbegin());
   }
   template<class IteratorReturnType>
   const_iterator<IteratorReturnType, std::unordered_map<std::string, size_t>::const_iterator> endItems() const {
@@ -196,7 +201,7 @@ class RosValue {
       throw std::runtime_error("Cannot iterate over the items of a RosValue that is not an object");
     }
 
-    return RosValue::const_iterator<IteratorReturnType, std::unordered_map<std::string, size_t>::const_iterator>(*this, object_info_.field_indexes->cend());
+    return RosValue::const_iterator<IteratorReturnType, std::unordered_map<std::string, size_t>::const_iterator>(*this, std::get<object_info_t>(info_).field_indexes->cend());
   }
 
  private:
@@ -280,7 +285,7 @@ class RosValue {
   size_t getPrimitiveArrayRosValueBufferSize() const;
 
   unordered_map<string, Pointer> getObjects() const;
-  const std::unordered_map<std::string, size_t>& RosValue::getObjectIndices() const;
+  const std::unordered_map<std::string, size_t>& getObjectIndices() const;
   vector<Pointer> getValues() const;
 
   string toString(const string &path = "") const;
@@ -330,7 +335,7 @@ class RosValue {
   
   template<typename T>
   const T& getPrimitive() const {
-    return reinterpret_cast<const T&>(primitive_info_.message_buffer->at(primitive_info_.offset));
+    return reinterpret_cast<const T&>(std::get<primitive_info_t>(info_).message_buffer.at(std::get<primitive_info_t>(info_).offset));
   }
 
   const ros_value_list_t& getChildren() const {

@@ -27,8 +27,9 @@ struct RosReaderOptions {
     string rx_timestamp_col = "rx_timestamp"; 
 
     MultiFileReaderOptions file_options;
-public:  
-    void Serialize(Serializer &serializer); 
+public: 
+    static void AddParameters(TableFunction& table_function); 
+    void Serialize(Serializer &serializer) const; 
     static RosReaderOptions Deserialize(Deserializer& deserializer); 
 };  
 }

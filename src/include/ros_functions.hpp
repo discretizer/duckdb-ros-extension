@@ -1,4 +1,0 @@
-class RosFunctions {
-public: 
-    static
-}

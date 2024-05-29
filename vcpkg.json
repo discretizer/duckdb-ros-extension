@@ -1,7 +1,6 @@
 {
   "dependencies": [
     "openssl", 
-    "boost-variant",
     "boost-spirit", 
     "boost-fusion", 
     "bzip2", 

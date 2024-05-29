@@ -64,6 +64,16 @@ LogicalType RosTransform::ConvertRosFieldType(const RosMsgTypes::FieldDef& def) 
     return duck_type; 
 }
 
+template <class T>
+static bool TransformNumerical( const vector<RosValue::Pointer>& value_list, Vector &result);
+static bool TransformTime(const vector<RosValue::Pointer>& value_list, Vector& result);
+static bool TransformTime(const vector<RosValue::ros_time_t>& value_list, Vector& result);
+static bool TransformInterval(const vector<RosValue::Pointer>& value_list, Vector& result);
+static bool TransformString(const vector<RosValue::Pointer>& value_list, Vector& result);
+static bool TransformArrayToArray(const vector<RosValue::Pointer>& value_list, Vector& result);
+static bool TransformArrayToList(const vector<RosValue::Pointer>& value_list, Vector& result);
+static bool TransformObjectToStruct(const vector<RosValue::Pointer>& value_list, Vector& result);
+
 static bool TransformValues(const vector<RosValue::Pointer>& value_list, Vector& result) {
     // Sniff first element.  All should have the same type anyway. 
     switch (value_list[0]->getType()) {
@@ -103,7 +113,7 @@ static bool TransformValues(const vector<RosValue::Pointer>& value_list, Vector&
             return TransformArrayToList(value_list, result); 
         }
     case RosValue::Type::object: 
-
+        return TransformObjectToStruct(value_list, result); 
     }
 }
 
@@ -115,7 +125,7 @@ static bool TransformNumerical( const vector<RosValue::Pointer>& value_list, Vec
     
     // Potentially catch exceptions here and set validity
 	for (size_t i = 0; i < value_list.size(); i++) {
-        data[i] = value_list[i].getPrimitive<T>(); 
+        data[i] = value_list[i]->as<T>(); 
 	}
 	return true;
 }
@@ -248,6 +258,7 @@ static bool TransformObjectToStruct(const vector<RosValue::Pointer>& value_list,
         auto name = child_names[i]; 
         TransformValues(embedded_value_map[name], *child_vectors[i]);
     }
+    return true; 
 }
 
 static void TransformHeaderField(EmbeddedValueMapType& embedded_value_map, 
@@ -306,6 +317,7 @@ bool RosTransform::TransformMessages(const RosReaderOptions& options,
             TransformValues(embedded_value_map[name], result[i]);
         }
     }
+    return true; 
 }
 
 bool RosTransform::TransformTypeToSchema(const RosMsgTypes::MsgDef& msg_def, RosReaderOptions& options, vector<string>& names, vector<LogicalType>& types) {
@@ -350,6 +362,7 @@ bool RosTransform::TransformTypeToSchema(const RosMsgTypes::MsgDef& msg_def, Ros
         }
     } 
     options.split_header = can_split_header; 
+    return true; 
 }
 
 }

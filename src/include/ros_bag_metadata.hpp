@@ -17,7 +17,8 @@ namespace duckdb {
 
 class RosBagMetadata {
 public: 
-    RosBagMetadata(); 
+    RosBagMetadata() {
+    }
 
     bool TopicInBag(const string &topic) const {
         return topic_connection_map.count(topic) != 0;
@@ -32,17 +33,15 @@ public:
         if (it == topic_connection_map.end()) {
             throw std::runtime_error("Unable to find topic in bag: " + topic);
         }
-
-        const auto connections = it->second;
         if (connections.empty()) {
             throw std::runtime_error("No connection data for topic: " + topic);
         }
-        return connections.front().data;
+        return connections[it->second[0]].data;
     }
 
     unordered_set<string> topics; 
     vector<RosBagTypes::connection_record_t> connections;
-    unordered_map<string, vector<RosBagTypes::connection_record_t&>> topic_connection_map;
+    unordered_map<string, vector<uint32_t>> topic_connection_map;
     
     vector<RosBagTypes::chunk_info_t> chunk_infos;
     vector<RosBagTypes::chunk_t> chunks;

@@ -8,6 +8,7 @@
 #include "duckdb/main/database_manager.hpp"
 #include "duckdb/main/attached_database.hpp"
 
+#include "ros_scanner.hpp"
 #include "ros_bag_reader.hpp"
 
 namespace duckdb {
@@ -15,6 +16,7 @@ namespace duckdb {
 struct RosGlobalState;
 struct RosLocalState : public LocalTableFunctionState {
 	shared_ptr<RosBagReader> reader;
+	idx_t batch_index; 
 	RosBagReader::ScanState scan_state; 
 };
 
@@ -25,6 +27,9 @@ struct RosBindData : public TableFunctionData {
 	
 	shared_ptr<RosBagReader> initial_reader;
 	RosReaderOptions ros_options;
+
+	vector<string> names;
+	vector<LogicalType> types;
 
 	/// @brief cardinality of the initial bind file 
 	idx_t initial_file_cardinality;
@@ -78,7 +83,8 @@ public:
 		    context, bind_data.ros_options.file_options, bind_data.reader_bind, *bind_data.file_list,
 		    bind_data.initial_reader->GetTypes(), bind_data.initial_reader->GetNames(), col_ids)),
 		column_ids(col_ids),
-		max_threads(MaxThreadsHelper(context, bind_data))
+		max_threads(MaxThreadsHelper(context, bind_data)), 
+		batch_index(0)
 	{
 		readers.reserve(bind_data.file_list->GetTotalFileCount()); 
 		for (auto file: bind_data.file_list->Files()) {
@@ -109,6 +115,7 @@ public:
 					local_state.reader = readers[file_index].reader;
 					// dequeue chunks until we're close too (but hopefullu still below the vector size)
 					local_state.reader->InitializeScan(local_state.scan_state, chunk_index); 
+					local_state.batch_index = batch_index++; 
 				} else {
 					readers[file_index].file_state = RosFileState::CLOSED; 
 					readers[file_index].reader = nullptr; 
@@ -183,7 +190,7 @@ private:
 				unique_lock<mutex> file_lock(current_file_lock); 
 				shared_ptr<RosBagReader> reader; 
 				try {
-					reader = make_shared_ptr<RosBagReader>(context, current_reader_data.file_to_be_opened, ros_options); 
+					reader = make_shared_ptr<RosBagReader>(context, ros_options, current_reader_data.file_to_be_opened); 
 					bind_data.multi_file_reader->InitializeReader(*reader, ros_options.file_options, bind_data.reader_bind, 
 													  initial_reader->GetTypes(), initial_reader->GetNames(), 
 													  column_ids, filters, initial_reader->GetFileName(), context, multi_file_reader_state); 
@@ -241,7 +248,42 @@ public:
 
 	//! Maximum number of threads; 
 	idx_t max_threads; 
+
+	//! Batch index of the next chunk to be scanned
+	idx_t batch_index;
 }; 
+
+static unique_ptr<FunctionData> RosBagBindInternal(ClientContext &context,
+	                                               unique_ptr<MultiFileReader> multi_file_reader,
+	                                               unique_ptr<MultiFileList> file_list,
+	                                               vector<LogicalType> &return_types, vector<string> &names,
+	                                               RosReaderOptions ros_options) 
+{
+	auto result = make_uniq<RosBindData>()
+	;
+	ros_options.file_options.AutoDetectHivePartitioning(*file_list, context); 
+	if (ros_options.file_options.union_by_name) {
+		throw BinderException("RosBag reading doesn't currently support union_by_name"); 
+	}
+
+	// Create initial reader.  This should initialize the schema.
+	auto initial_reader = make_shared_ptr<RosBagReader>(context, ros_options, file_list->GetFirstFile());
+	ros_options.split_header = initial_reader->Options().split_header; 
+
+	names = initial_reader->GetNames(); 
+	return_types = initial_reader->GetTypes();
+
+	multi_file_reader->BindOptions(ros_options.file_options, *file_list, return_types, names, result->reader_bind ); 
+	 
+	result->multi_file_reader=std::move(multi_file_reader); 
+	result->file_list = std::move(file_list);
+	result->initial_file_chunk_count = initial_reader->GetChunkSet().size(); 
+	result->initial_file_cardinality = initial_reader->NumMessages(); 
+	result->ros_options = ros_options;  
+	
+	return std::move(result); 
+
+}
 
 static unique_ptr<FunctionData> RosBagBind(ClientContext &context, TableFunctionBindInput &input, vector<LogicalType> &return_types, vector<string> &names) {
 	// Create output result
@@ -261,30 +303,13 @@ static unique_ptr<FunctionData> RosBagBind(ClientContext &context, TableFunction
 		if (loption == "split_header") {
 			ros_options.split_header = BooleanValue::Get(kv.second); 
 		}
+		if (loption == "rx_timestamp_col") {
+			ros_options.rx_timestamp_col = StringValue::Get(kv.second); 
+		}
 	}
-	ros_options.file_options.AutoDetectHivePartitioning(*file_list, context); 
-	if (ros_options.file_options.union_by_name) {
-		throw BinderException("RosBag reading doesn't currently support union_by_name"); 
-	}
 
-	// Create initial reader.  This should initialize the schema.
-	auto initial_reader = make_shared_ptr<RosBagReader>(context, ros_options, file_list->GetFirstFile());
-	ros_options.split_header = initial_reader->Options().split_header; 
-
-	std::copy(initial_reader->GetNames().cbegin(), initial_reader->GetNames().cend(), names.end());
-	std::copy(initial_reader->GetTypes().cbegin(), initial_reader->GetTypes().cend(), return_types.end()); 
-
-	multi_file_reader->BindOptions(ros_options.file_options, *file_list, return_types, names, result->reader_bind ); 
-	 
-	result->multi_file_reader=std::move(multi_file_reader); 
-	result->file_list = std::move(file_list);
-	result->initial_file_chunk_count = initial_reader->GetChunkSet().size(); 
-	result->initial_file_cardinality = initial_reader->NumMessages(); 
-	result->ros_options = ros_options;  
-	
-	return std::move(result); 
+	return RosBagBindInternal(context, std::move(multi_file_reader), std::move(file_list), return_types, names, ros_options); 
 }
-
 
 static unique_ptr<GlobalTableFunctionState> RosBagInitGlobal(ClientContext &context, TableFunctionInitInput &input) {
 	auto &bind_data = input.bind_data->Cast<RosBindData>();
@@ -346,11 +371,59 @@ static void RosBagScanImplementation(ClientContext &context, TableFunctionInput 
 		}
 	} while(true); 
 }
+static unique_ptr<NodeStatistics> RosBagCardinality(ClientContext &context, const FunctionData *bind_data) {
+	auto &data = bind_data->Cast<RosBindData>();
+	return make_uniq<NodeStatistics>(data.initial_file_cardinality * data.file_list->GetTotalFileCount());
+}
 
-static TableFunctionSet GetFunctionSet() {
+static idx_t RosBagScanGetBatchIndex(ClientContext &context, const FunctionData *bind_data_p,
+	                                  LocalTableFunctionState *local_state,
+	                                  GlobalTableFunctionState *global_state) {
+	auto &data = local_state->Cast<RosLocalState>();
+	return data.batch_index;
+}
+
+static void RosScanSerialize(Serializer &serializer, const optional_ptr<FunctionData> bind_data_p,
+	                                 const TableFunction &function) {
+	auto &bind_data = bind_data_p->Cast<RosBindData>();
+
+	serializer.WriteProperty(100, "files", bind_data.file_list->GetAllFiles());
+	serializer.WriteProperty(101, "types", bind_data.types);
+	serializer.WriteProperty(102, "names", bind_data.names);
+	serializer.WriteProperty(103, "ros_options", bind_data.ros_options);
+}
+
+static unique_ptr<FunctionData> RosScanDeserialize(Deserializer &deserializer, TableFunction &function) {
+	auto &context = deserializer.Get<ClientContext &>();
+	auto files = deserializer.ReadProperty<vector<string>>(100, "files");
+	auto types = deserializer.ReadProperty<vector<LogicalType>>(101, "types");
+	auto names = deserializer.ReadProperty<vector<string>>(102, "names");
+	auto ros_options = deserializer.ReadProperty<RosReaderOptions>(103, "ros_options");
+
+	vector<Value> file_path;
+	for (auto &path : files) {
+		file_path.emplace_back(path);
+	}
+
+	auto multi_file_reader = MultiFileReader::Create(function);
+	auto file_list = multi_file_reader->CreateFileList(context, Value::LIST(LogicalType::VARCHAR, file_path),
+		                                                   FileGlobOptions::DISALLOW_EMPTY);
+	return RosBagBindInternal(context, std::move(multi_file_reader), std::move(file_list), types, names,
+		                               ros_options);
+}
+
+TableFunctionSet RosScanFunction::GetFunctionSet() {
     TableFunction table_function("ros_scan", {LogicalType::VARCHAR}, RosBagScanImplementation, RosBagBind, RosBagInitGlobal, RosBagInitLocal); 
 	table_function.table_scan_progress = RosBagProgress; 
-	table_function
+	table_function.cardinality = RosBagCardinality;
+	table_function.get_batch_index = RosBagScanGetBatchIndex;
+	table_function.serialize = RosScanSerialize;
+	table_function.deserialize = RosScanDeserialize;
+
+	RosReaderOptions::AddParameters(table_function); 
+	MultiFileReader::AddParameters(table_function);
+
+	return MultiFileReader::CreateFunctionSet(table_function); 
 }
 
 

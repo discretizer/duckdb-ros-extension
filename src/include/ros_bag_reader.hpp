@@ -23,36 +23,20 @@
 
 namespace duckdb{
 
-const RosMsgTypes::primitive_type_map_t RosMsgTypes::FieldDef::primitive_type_map = {
-    {"bool", RosValue::Type::ros_bool},
-    {"int8", RosValue::Type::int8},
-    {"uint8", RosValue::Type::uint8},
-    {"int16", RosValue::Type::int16},
-    {"uint16", RosValue::Type::uint16},
-    {"int32", RosValue::Type::int32},
-    {"uint32", RosValue::Type::uint32},
-    {"int64", RosValue::Type::int64},
-    {"uint64", RosValue::Type::uint64},
-    {"float32", RosValue::Type::float32},
-    {"float64", RosValue::Type::float64},
-    {"string", RosValue::Type::string},
-    {"time", RosValue::Type::ros_time},
-    {"duration", RosValue::Type::ros_duration},
-
-    // Deprecated types
-    {"byte", RosValue::Type::int8},
-    {"char", RosValue::Type::uint8},
-};
-
 class RosBagMetadata; 
 class RosBagMetadataCache;
 class RosBagReader {
 public:
     struct ChunkIndex {
+    public: 
+        ChunkIndex(size_t i, size_t cnt): 
+            idx(i), message_cnt(cnt) 
+        {
+        }
         size_t idx; 
         size_t message_cnt; 
-        bool operator() (const ChunkIndex &c1, const ChunkIndex &c2){
-            return (c1.idx < c2.idx); 
+        bool operator<( const ChunkIndex &c) const{
+            return (idx < c.idx); 
         }
     }; 
     using ChunkSet = set<ChunkIndex>;
@@ -75,7 +59,7 @@ public:
 
     const vector<LogicalType>& GetTypes() const;
     const vector<string>&  GetNames() const; 
-    const string& GetFileName() const; 
+    string GetFileName() const; 
 
     MultiFileReaderData             reader_data;
     

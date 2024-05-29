@@ -16,6 +16,27 @@ using namespace std::literals::string_view_literals;
 
 constexpr auto ROSBAG_MAGIC_STRING = "#ROSBAG V"sv; 
 
+const RosMsgTypes::primitive_type_map_t RosMsgTypes::FieldDef::primitive_type_map = {
+    {"bool", RosValue::Type::ros_bool},
+    {"int8", RosValue::Type::int8},
+    {"uint8", RosValue::Type::uint8},
+    {"int16", RosValue::Type::int16},
+    {"uint16", RosValue::Type::uint16},
+    {"int32", RosValue::Type::int32},
+    {"uint32", RosValue::Type::uint32},
+    {"int64", RosValue::Type::int64},
+    {"uint64", RosValue::Type::uint64},
+    {"float32", RosValue::Type::float32},
+    {"float64", RosValue::Type::float64},
+    {"string", RosValue::Type::string},
+    {"time", RosValue::Type::ros_time},
+    {"duration", RosValue::Type::ros_duration},
+
+    // Deprecated types
+    {"byte", RosValue::Type::int8},
+    {"char", RosValue::Type::uint8},
+};
+
 /// @brief Reads the appropriate metadata from the given bag.  
 /// @param allocator 
 /// @param file_handle 
@@ -107,7 +128,7 @@ LoadMetadata(Allocator &allocator, FileHandle &file_handle) {
         metadata->connections[connection_id].id = connection_id;
         metadata->connections[connection_id].topic = topic;
         metadata->connections[connection_id].data = connection_data;
-        metadata->topic_connection_map[topic].push_back(metadata->connections[connection_id]);
+        metadata->topic_connection_map[topic].emplace_back(connection_id);
     }
     /**
     * Read the CHUNK_INFO records. These are guaranteed to be immediately after the CONNECTION records,
@@ -209,6 +230,10 @@ RosBagReader::RosBagReader(ClientContext &context, RosReaderOptions options, sha
     InitializeSchema(); 
 }
 
+RosBagReader::~RosBagReader() {
+}
+
+
 const RosBagMetadata& RosBagReader::GetMetadata() const {
     return *(metadata->metadata);
 }
@@ -235,6 +260,18 @@ const RosBagReader::ChunkSet& RosBagReader::GetChunkSet() const {
 
 const RosBagTypes::chunk_t& RosBagReader::GetChunk(size_t index) const {
     return metadata->metadata->chunks[index]; 
+}
+
+const vector<LogicalType>& RosBagReader::GetTypes() const {
+    return return_types; 
+}
+
+const vector<string>&  RosBagReader::GetNames() const {
+    return names; 
+}
+
+string RosBagReader::GetFileName() const {
+    return file_handle->GetPath(); 
 }
 
 void RosBagReader::ScanState::Serialize(Serializer &serializer) const {
@@ -340,15 +377,16 @@ shared_ptr<RosMsgTypes::MsgDef> RosBagReader::MakeMsgDef(const string &topic) co
 }
 
 shared_ptr<RosBagReader::TopicIndex> RosBagReader::MakeTopicIndex(const std::string &topic) const {
-    auto topic_idx = make_shared<RosBagReader::TopicIndex>(); 
+    auto topic_idx = make_shared_ptr<RosBagReader::TopicIndex>(); 
 
-    for (const auto &connection_record : metadata->metadata->topic_connection_map.at(topic)) {
-        for (auto block = connection_record->blocks.cbegin(); block != connection_record->blocks.cend(); block++) {
-            topic_idx->message_cnt += block.info.message_count; 
-            topic_idx->chunk_set.emplace(metadata->metadata->chunks.cbegin() + block.info.chunk_idx);
+    for (const auto &connection_id : metadata->metadata->topic_connection_map.at(topic)) {
+        for (const auto& block: GetMetadata().connections[connection_id].blocks) {
+            topic_idx->message_cnt += block.message_count; 
+            topic_idx->chunk_set.emplace(block.chunk_idx, block.message_count);
         }
-        topic_idx->connection_ids.emplace(connection_record->id);
+        topic_idx->connection_ids.emplace(connection_id);
     }
+    return topic_idx; 
 }   
 }
 

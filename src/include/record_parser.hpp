@@ -1,7 +1,11 @@
 #pragma once 
 
+#include <duckdb.hpp>
+
+#ifndef DUCKDB_AMALGAMATION
 #include "duckdb/common/allocator.hpp"
 #include "duckdb/common/file_system.hpp"
+#endif
 
 #include "ros_bag_types.hpp"
 
@@ -92,8 +96,8 @@ private:
 
 
 template <typename T> 
-std::pair<std::string_view, T&> make_field(std::string_view name, T& val){
-    return make_pair<std::string_view, T&>(name, val); 
+std::pair<std::string_view, std::reference_wrapper<T>> make_field(std::string_view name, T& val){
+    return std::make_pair<std::string_view, std::reference_wrapper<T>>(std::move(name), val); 
 }
 
 template <typename T> 
@@ -106,11 +110,16 @@ void readField(const std::string_view& data, std::string& value) {
 } 
 
 void readField(const std::string_view& data, RosValue::ros_time_t& time) {
-    
+    uint32_t secs; 
+    uint32_t nsecs; 
+    readField(data, secs);
+    readField(data, nsecs);
+
+    time = RosValue::ros_time_t(secs,nsecs); 
 }
 
 template <class ... args>
-void readFields(const std::string_view& data, std::pair<std::string_view, args&> ... fields) {  
+void readFields(const std::string_view& data, std::pair<std::string_view, std::reference_wrapper<args>>... fields) {  
   auto current = data.begin(); 
 
   while (current < data.end()) {

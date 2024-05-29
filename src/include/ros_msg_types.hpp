@@ -1,6 +1,13 @@
 #pragma once
 
+#include <duckdb.hpp>
+
+#ifndef DUCKDB_AMALGAMATION
+
 #include <duckdb/common/unordered_map.hpp>
+#include <duckdb/common/shared_ptr.hpp>
+#include <duckdb/common/vector.hpp>
+#endif 
 
 #include "ros_value.hpp"
 
@@ -131,7 +138,7 @@ class RosMsgTypes{
       }
 
       members_.reserve(parsed_info.members.size());
-      field_indexes_ = std::make_shared<std::unordered_map<std::string, size_t>>();
+      field_indexes_ = make_shared_ptr<std::unordered_map<std::string, size_t>>();
       field_indexes_->reserve(num_fields);
       size_t field_num = 0;
       for (const auto& member : parsed_info.members) {
@@ -153,15 +160,14 @@ class RosMsgTypes{
     }
 
     static const std::string& getMemberName(const MemberDef &member) {
-      switch (member.index()) {
-        case 0:
-          return std::get<FieldDef>(member).name();
-        case 1:
-          return std::get<ConstantDef>(member).constant_name;
+      if ( member.index() == 0) {
+        return std::get<FieldDef>(member).name();
+      } else {
+        return std::get<ConstantDef>(member).constant_name;
       }
     }
 
-    const std::shared_ptr<std::unordered_map<std::string, size_t>>& fieldIndexes() const {
+    const shared_ptr<std::unordered_map<std::string, size_t>>& fieldIndexes() const {
       return field_indexes_;
     }
 
@@ -189,10 +195,10 @@ class RosMsgTypes{
     }
 
    private:
-    std::shared_ptr<std::unordered_map<std::string, size_t>> field_indexes_;
-    std::vector<MemberDef> members_;
-    const std::string name_;
-    std::string scope_;
+    shared_ptr<std::unordered_map<std::string, size_t>> field_indexes_;
+    vector<MemberDef> members_;
+    const string name_;
+    string scope_;
   };
 
   class EmbeddedMsgDef : public BaseMsgDef {
@@ -228,7 +234,7 @@ class RosMsgTypes{
     }
 
    private:
-    std::unordered_map<std::string, EmbeddedMsgDef> embedded_definition_map_;
+    unordered_map<string, EmbeddedMsgDef> embedded_definition_map_;
   };
 };
 
