@@ -58,11 +58,11 @@ public:
 private: 
     Allocator& allocator; 
  
-    AllocatedData header;
     idx_t header_size; 
-
+    AllocatedData header;
+    
+    idx_t data_size; 
     AllocatedData data;
-    idx_t data_size;  
 }; 
 
 class RosBufferedRecordParser {

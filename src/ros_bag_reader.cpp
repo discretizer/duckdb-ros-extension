@@ -177,7 +177,6 @@ LoadMetadata(Allocator &allocator, FileHandle &file_handle) {
             // We currently don't save this information, but we potentially could to speed up accesses
             // that only want data after a certain time.
 
-            size_t index_offset = file_handle.SeekPosition(); 
             record_parser.Read(file_handle, true); 
 
             uint32_t version;
@@ -200,7 +199,7 @@ LoadMetadata(Allocator &allocator, FileHandle &file_handle) {
 }
 
 RosBagReader::RosBagReader(ClientContext& context, RosReaderOptions options, string file_name):
-    allocator(BufferAllocator::Get(context)), options(std::move(options))
+    options(std::move(options)), allocator(BufferAllocator::Get(context))
 {
 	file_handle = FileSystem::GetFileSystem(context).OpenFile(file_name, FileOpenFlags::FILE_FLAGS_READ);
 	if (!file_handle->CanSeek()) {
@@ -225,7 +224,7 @@ RosBagReader::RosBagReader(ClientContext& context, RosReaderOptions options, str
 }
 
 RosBagReader::RosBagReader(ClientContext &context, RosReaderOptions options, shared_ptr<RosBagMetadataCache> metadata): 
-    allocator(BufferAllocator::Get(context)), options(std::move(options)), metadata(std::move(metadata))
+     metadata(std::move(metadata)), options(std::move(options)), allocator(BufferAllocator::Get(context))
 {
     InitializeSchema(); 
 }
@@ -287,7 +286,7 @@ unique_ptr<RosBagReader::ScanState> RosBagReader::ScanState::Deserialize(Deseria
     scan_state->chunks = chunks;
     scan_state->chunk_proccessed_bytes = processed_byte;
 
-    return std::move(scan_state); 
+    return scan_state; 
 }
 
 void RosBagReader::Scan(RosBagReader::ScanState& scan_state, DataChunk& result) {

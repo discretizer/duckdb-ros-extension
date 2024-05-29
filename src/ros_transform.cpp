@@ -115,6 +115,7 @@ static bool TransformValues(const vector<RosValue::Pointer>& value_list, Vector&
     case RosValue::Type::object: 
         return TransformObjectToStruct(value_list, result); 
     }
+    return false; 
 }
 
 template <class T>
@@ -175,13 +176,14 @@ static bool TransformString(const vector<RosValue::Pointer>& value_list, Vector&
 }
 
 static bool TransformArrayToArray(const vector<RosValue::Pointer>& value_list, Vector& result) {
-    bool success = true;
     size_t count = value_list.size(); 
 
 	// Initialize array vector
 	auto &result_validity = FlatVector::Validity(result);
 	auto array_size = ArrayType::GetSize(result.GetType());
 	auto child_count = count * array_size;
+
+    result_validity.SetAllValid(count); 
 
     auto nested_values = vector<RosValue::Pointer>();
     nested_values.reserve(child_count);  
@@ -197,6 +199,8 @@ static bool TransformArrayToList(const vector<RosValue::Pointer>& value_list, Ve
     size_t count = value_list.size(); 
     auto list_entries = FlatVector::GetData<list_entry_t>(result);
 	auto &list_validity = FlatVector::Validity(result);
+
+    list_validity.SetAllValid(count);
 	idx_t offset = 0;
 
     // loop through values once and get sizes and offsets
@@ -224,8 +228,6 @@ using EmbeddedValueMapType = unordered_map<std::string, vector<RosValue::Pointer
 using ObjectIndexType = pair<string, size_t>;
 
 static bool TransformObjectToStruct(const vector<RosValue::Pointer>& value_list, Vector& result) {
-    auto &result_validity = FlatVector::Validity(result);
-
 	// Get child vectors and names
 	auto &child_vs = StructVector::GetEntries(result);
 
