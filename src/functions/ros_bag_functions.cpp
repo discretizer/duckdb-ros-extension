@@ -1,4 +1,4 @@
-#include "functions/ros_bag_info.hpp"
+#include "functions/ros_bag_functions.hpp"
 
 #include <sstream>
 
