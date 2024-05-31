@@ -32,9 +32,14 @@ struct RosBagInfoBindData : public TableFunctionData {
 
 enum class RosBagInfoOperatorType : uint8_t { INFO, CHUNKS, CONNECTIONS };
 struct RosBagInfoOperatorData : public GlobalTableFunctionState {
-    explicit RosBagInfoOperatorData(ClientContext &context, const vector<LogicalType> &types) 
+    explicit RosBagInfoOperatorData(ClientContext &context, const vector<LogicalType> &types)
+        : collection(context, types)
     {}
 	
+
+	ColumnDataCollection collection;
+	ColumnDataScanState scan_state;
+
     MultiFileListScanData file_list_scan;
 	string current_file;
 
@@ -100,7 +105,7 @@ void RosBagInfoOperatorData::BindInfoData(vector<LogicalType> &return_types, vec
 
 void RosBagInfoOperatorData::LoadBagInfoData(ClientContext& context, const vector<LogicalType>& return_types, const string &file_path) {
     RosReaderOptions options; 
-    auto reader = make_uniq<RosBagReader>(context, file_path, options); 
+    auto reader = make_uniq<RosBagReader>(context, options, file_path); 
 
     auto& metadata = reader->GetMetadata();
 
@@ -136,12 +141,11 @@ void RosBagInfoOperatorData::LoadBagInfoData(ClientContext& context, const vecto
 	DataChunk current_chunk;
 	current_chunk.Initialize(context, return_types, 1);
     current_chunk.SetValue(0, 0, Value(reader->GetFileName())); //Return file name 
-    current_chunk.SetValue(0, 1, Value::INTERVAL(0, 0, (end_time.to_nsec() - start_time.to_nsec()) * 1e1000)); 
+    current_chunk.SetValue(0, 1, Value::INTERVAL(0, 0, (end_time.to_nsec() - start_time.to_nsec()) * 1e3)); 
     current_chunk.SetValue(0, 2, Value::TIMESTAMPNS(timestamp_t(start_time.to_nsec())));
     current_chunk.SetValue(0, 3, Value::TIMESTAMPNS(timestamp_t(end_time.to_nsec()))); 
     current_chunk.SetValue(0, 4, Value::UBIGINT(reader->NumMessages()));
     current_chunk.SetValue(0, 5, Value::UBIGINT(reader->NumChunks()));
-
 
     vector<Value> compression_list; 
     for (const auto& stat: chunk_compression_stats) {
@@ -196,8 +200,7 @@ unique_ptr<FunctionData> RosBagBind(ClientContext &context, TableFunctionBindInp
 
 template <RosBagInfoOperatorType TYPE>
 unique_ptr<GlobalTableFunctionState> RosBagInit(ClientContext &context, TableFunctionInitInput &input) {
-	auto &bind_data = input.bind_data->Cast<ParquetMetaDataBindData>();
-
+	auto &bind_data = input.bind_data->Cast<RosBagInfoBindData>();
 	auto result = make_uniq<RosBagInfoOperatorData>(context, bind_data.return_types);
 
 	bind_data.file_list->InitializeScan(result->file_list_scan);
@@ -222,25 +225,24 @@ void RosBagImplementation(ClientContext &context, TableFunctionInput &data_p, Da
 	auto &bind_data = data_p.bind_data->Cast<RosBagInfoBindData>();
 
 	while (true) {
-		if (!data.collection.Scan(data.scan_state, output)) {
+        if (!data.collection.Scan(data.scan_state, output)) {
+    		if (!bind_data.file_list->Scan(data.file_list_scan, data.current_file)) {
+	    		return;
+		    }
 
-			// Try get next file
-			if (!bind_data.file_list->Scan(data.file_list_scan, data.current_file)) {
-				return;
-			}
-
-			switch (TYPE) {
-			case RosBagInfoOperatorType::INFO:
-				data.LoadBagInfoData(context, bind_data.return_types, data.current_file);
-				break;
-			default:
-				throw InternalException("Unsupported RosBagInfoOperatorType");
-			}
-			continue;
-		}
-		if (output.size() != 0) {
+    		switch (TYPE) {
+	    	case RosBagInfoOperatorType::INFO:
+		    	data.LoadBagInfoData(context, bind_data.return_types, data.current_file);
+			    break;
+		    default:
+			    throw InternalException("Unsupported RosBagInfoOperatorType");
+		    }
+		    continue;
+            
+        }
+        if (output.size() != 0) {
 			return;
-		}
+        }
 	}
 }
 

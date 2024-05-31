@@ -3,7 +3,7 @@
 #include "ros_extension.hpp"
 #include "ros_scanner.hpp"
 
-#include "functions/ros_bag_info.hpp"
+#include "functions/ros_bag_functions.hpp"
 
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
