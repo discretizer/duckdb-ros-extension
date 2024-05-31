@@ -21,6 +21,7 @@ add_definitions(-std=c++17)
 include_directories(src/include)
 
 set(EXTENSION_SOURCES 
+  src/functions/ros_bag_functions.cpp 
   src/message_def_parser.cpp
   src/message_parser.cpp
   src/ros_reader_options.cpp

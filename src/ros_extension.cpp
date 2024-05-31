@@ -3,6 +3,8 @@
 #include "ros_extension.hpp"
 #include "ros_scanner.hpp"
 
+#include "functions/ros_bag_info.hpp"
+
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/string_util.hpp"
@@ -33,7 +35,10 @@ static void LoadInternal(DatabaseInstance &instance) {
 	scan_fun.name = "read_rosbag";
 	ExtensionUtil::RegisterFunction(instance, scan_fun);
 	scan_fun.name = "rosbag_scan";
-	ExtensionUtil::RegisterFunction(instance, scan_fun);  
+	ExtensionUtil::RegisterFunction(instance, scan_fun);
+    
+    RosBagInfoFunction rosbag_info_function; 
+    ExtensionUtil::RegisterFunction(instance, rosbag_info_function); 
 }
 
 void RosExtension::Load(DuckDB &db) {
