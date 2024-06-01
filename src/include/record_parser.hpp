@@ -20,15 +20,13 @@ class RosRecordParser{
 public:  
     RosRecordParser(Allocator& a): 
         allocator(a),
-        header_size(0ULL), 
+        header_len(0UL), 
         header(a.Allocate(RECORD_DATA_SIZE)),
-        data_size(0ULL), 
+        data_len(0UL), 
         data(a.Allocate(RECORD_HEADER_SIZE))
     { 
     }
     void Read(FileHandle& file_handler, bool header_only=false) {
-        uint32_t header_len; 
-        uint32_t data_len; 
         file_handler.Read(&header_len, sizeof(header_len)); 
         if (header_len > header.GetSize()) {
             idx_t next_len = NextPowerOfTwo(header_len); 
@@ -36,6 +34,8 @@ public:
         } 
         file_handler.Read(header.get(), header_len);
         file_handler.Read(&data_len, sizeof(data_len));
+
+        
         if (header_only) {
             file_handler.Seek(file_handler.SeekPosition() + data_len); 
         } else {
@@ -48,20 +48,20 @@ public:
     }
 
     std::string_view Header() const {
-        return std::string_view(reinterpret_cast<const char *>(header.get()), static_cast<size_t>(header_size)); 
+        return std::string_view(reinterpret_cast<const char *>(header.get()), static_cast<size_t>(header_len)); 
     }
 
     std::string_view Data() const {
-        return std::string_view(reinterpret_cast<const char *>(data.get()), static_cast<size_t>(data_size)); 
+        return std::string_view(reinterpret_cast<const char *>(data.get()), static_cast<size_t>(data_len)); 
     }
 
 private: 
     Allocator& allocator; 
  
-    idx_t header_size; 
+    uint32_t header_len; 
     AllocatedData header;
     
-    idx_t data_size; 
+    uint32_t data_len; 
     AllocatedData data;
 }; 
 
@@ -69,9 +69,6 @@ class RosBufferedRecordParser {
 public: 
     RosBufferedRecordParser(ByteBuffer& data) 
     {
-        uint32_t header_len; 
-        uint32_t data_len; 
-
         header_len = data.read<uint32_t>();
         header_ptr = data.ptr; 
         data.inc(header_len); 
@@ -81,28 +78,26 @@ public:
     }
 
     std::string_view Header() const {
-        return std::string_view(reinterpret_cast<const char *>(header_ptr), static_cast<size_t>(header_size)); 
+        return std::string_view(reinterpret_cast<const char *>(header_ptr), static_cast<size_t>(header_len)); 
     }
 
     std::string_view Data() const {
-        return std::string_view(reinterpret_cast<const char *>(data_ptr), static_cast<size_t>(data_size)); 
+        return std::string_view(reinterpret_cast<const char *>(data_ptr), static_cast<size_t>(data_len)); 
     }
 private: 
     data_ptr_t header_ptr;
-    idx_t header_size; 
+    uint32_t header_len; 
     data_ptr_t data_ptr; 
-    idx_t data_size; 
+    uint32_t data_len; 
 }; 
 
 
 template <typename T> 
-std::pair<std::string_view, std::reference_wrapper<T>> make_field(std::string_view name, T& val){
-    return std::make_pair<std::string_view, std::reference_wrapper<T>>(std::move(name), val); 
-}
-
-template <typename T> 
 void readField(const std::string_view& data, T& value) {
-    value = *reinterpret_cast<const T *>(data.data());
+    // So there are several subtle issues with just casting the pointer here; 
+    // Pointer alignment and other issues prevent just raw (i.e. reinterpret_cast )
+    // casting.  Best just to memcpy. 
+    std::memcpy(&value, data.begin(), data.size());
 } 
 
 void readField(const std::string_view& data, std::string& value) {
@@ -110,20 +105,36 @@ void readField(const std::string_view& data, std::string& value) {
 } 
 
 void readField(const std::string_view& data, RosValue::ros_time_t& time) {
-    uint32_t secs; 
-    uint32_t nsecs; 
-    readField(data, secs);
-    readField(data, nsecs);
+    uint64_t usec; 
+    readField(data, usec);
 
-    time = RosValue::ros_time_t(secs,nsecs); 
+    time = RosValue::ros_time_t(usec / 1000000000, usec % 10000000000); 
 }
 
+template <typename T> 
+struct field {
+public: 
+    field(std::string_view name, T& value): 
+        field_name(name), field_ref(value) {
+    }
+    void apply(const std::string_view& name, const std::string_view& data ) {
+        if (name == field_name) {
+            readField(data, field_ref);
+        }
+    }
+
+    std::string_view field_name;
+    T& field_ref; 
+};
+
 template <class ... args>
-void readFields(const std::string_view& data, std::pair<std::string_view, std::reference_wrapper<args>>... fields) {  
+void readFields(const std::string_view& data, field<args>&&... fields) {  
   auto current = data.begin(); 
 
   while (current < data.end()) {
-    const uint32_t field_len = *(reinterpret_cast<const uint32_t *>(current));
+    uint32_t field_len = 0;  
+    readField(std::string_view(current, sizeof(field_len)), field_len); 
+    
     current += sizeof(uint32_t);
 
     std::string_view buffer(current, field_len); 
@@ -137,12 +148,7 @@ void readFields(const std::string_view& data, std::pair<std::string_view, std::r
     const auto data = buffer.substr(sep + 1); 
     // This fun bit of code iterates through the field definitions 
     // and parses out the field of the field name matches. 
-    ([&]
-    {
-      if (name == fields.first) {
-        readField(data, fields.second); 
-      }
-    } (), ...); 
+    (fields.apply(name, data), ...); 
 
     current += field_len;
   }

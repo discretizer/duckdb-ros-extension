@@ -83,13 +83,13 @@ LoadMetadata(Allocator &allocator, FileHandle &file_handle) {
     record_parser.Read(file_handle, true);
 
     readFields(record_parser.Header(), 
-        make_field("conn_count", connection_count), 
-        make_field("chunck_count", chunk_count ), 
-        make_field("index_pos", index_pos)
+        field("conn_count", connection_count), 
+        field("chunk_count", chunk_count ), 
+        field("index_pos", index_pos)
     ); 
     
     metadata->connections.resize(connection_count); 
-    metadata->chunk_infos.reserve(chunk_count); 
+    metadata->chunk_infos.resize(chunk_count); 
     metadata->chunks.reserve(chunk_count); 
 
     /**
@@ -103,8 +103,8 @@ LoadMetadata(Allocator &allocator, FileHandle &file_handle) {
         std::string topic; 
 
         readFields(record_parser.Header(), 
-            make_field("conn", connection_id), 
-            make_field("topic", topic)
+            field("conn", connection_id), 
+            field("topic", topic)
         ); 
         if (topic.empty()) {
             continue;
@@ -112,13 +112,13 @@ LoadMetadata(Allocator &allocator, FileHandle &file_handle) {
         RosBagTypes::connection_data_t connection_data;
         connection_data.topic = topic;
 
-        std::string latching_str; 
+        std::string latching_str = ""; 
         readFields(record_parser.Data(), 
-            make_field("type", connection_data.type), 
-            make_field("md5sum", connection_data.md5sum), 
-            make_field("message_definition", connection_data.message_definition), 
-            make_field("callerid", connection_data.callerid ), 
-            make_field("latching", latching_str)
+            field("type", connection_data.type), 
+            field("md5sum", connection_data.md5sum), 
+            field("message_definition", connection_data.message_definition), 
+            field("callerid", connection_data.callerid ), 
+            field("latching", latching_str)
         ); 
         connection_data.latching = (latching_str == "1"); 
         const size_t slash_pos = connection_data.type.find_first_of('/');
@@ -140,11 +140,11 @@ LoadMetadata(Allocator &allocator, FileHandle &file_handle) {
 
         uint32_t ver;
         readFields(record_parser.Header(), 
-            make_field("ver", ver), 
-            make_field("chunk_pos", chunk_info.chunk_pos), 
-            make_field("start_time", chunk_info.start_time), 
-            make_field("end_time", chunk_info.end_time),
-            make_field("count", chunk_info.connection_count) 
+            field("ver", ver), 
+            field("chunk_pos", chunk_info.chunk_pos), 
+            field("start_time", chunk_info.start_time), 
+            field("end_time", chunk_info.end_time),
+            field("count", chunk_info.connection_count) 
         ); 
         metadata->chunk_infos[i] = chunk_info;
     }
@@ -163,8 +163,8 @@ LoadMetadata(Allocator &allocator, FileHandle &file_handle) {
 
         chunk.offset = file_handle.SeekPosition(); 
         readFields(record_parser.Header(), 
-            make_field("compression", chunk.compression), 
-            make_field("size", chunk.uncompressed_size)
+            field("compression", chunk.compression), 
+            field("size", chunk.uncompressed_size)
         );  
 
         if (!(chunk.compression == "lz4" || chunk.compression == "bz2" || chunk.compression == "none")) {
@@ -184,9 +184,9 @@ LoadMetadata(Allocator &allocator, FileHandle &file_handle) {
             uint32_t msg_count;
       
             readFields(  record_parser.Header(), 
-                make_field("ver", version), 
-                make_field("conn", connection_id), 
-                make_field("count", msg_count)
+                field("ver", version), 
+                field("conn", connection_id), 
+                field("count", msg_count)
             ); 
 
             metadata->connections[connection_id].blocks.emplace_back(i, msg_count); 
@@ -332,9 +332,9 @@ void RosBagReader::Scan(RosBagReader::ScanState& scan_state, DataChunk& result) 
             RosValue::ros_time_t timestamp; 
 
             readFields( record.Header(),
-                make_field("op", op), 
-                make_field("conn", conn_id),
-                make_field("time", timestamp) 
+                field("op", op), 
+                field("conn", conn_id),
+                field("time", timestamp) 
             );
             switch (RosBagTypes::op(op)) {
                 case RosBagTypes::op::MESSAGE_DATA: {
