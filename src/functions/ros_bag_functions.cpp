@@ -1,6 +1,6 @@
 #include "functions/ros_bag_functions.hpp"
 
-#include <sstream>
+#include "duckdb.hpp"
 
 #ifndef DUCKDB_AMALGAMATION
 #include "duckdb/common/multi_file_reader.hpp"
@@ -11,6 +11,7 @@
 #endif
 
 #include "ros_bag_metadata.hpp"
+#include <sstream>
 
 namespace duckdb {
 
@@ -58,44 +59,44 @@ public:
 //===--------------------------------------------------------------------===//
 void RosBagInfoOperatorData::BindInfoData(vector<LogicalType> &return_types, vector<string> &names) {
     names.emplace_back("file_name");
-	return_types.emplace_back(LogicalType::VARCHAR);
+	return_types.emplace_back(LogicalTypeId::VARCHAR);
 
 	names.emplace_back("duration");
-	return_types.emplace_back(LogicalType::INTERVAL);
+	return_types.emplace_back(LogicalTypeId::INTERVAL);
 
 	names.emplace_back("start");
-	return_types.emplace_back(LogicalType::TIMESTAMP_NS);
+	return_types.emplace_back(LogicalTypeId::TIMESTAMP_NS);
 
 	names.emplace_back("end");
-	return_types.emplace_back(LogicalType::TIMESTAMP_NS);
+	return_types.emplace_back(LogicalTypeId::TIMESTAMP_NS);
 
 	names.emplace_back("messages");
-	return_types.emplace_back(LogicalType::UBIGINT);
+	return_types.emplace_back(LogicalTypeId::UBIGINT);
 
     names.emplace_back("chunks");
-    return_types.emplace_back(LogicalType::UBIGINT);
+    return_types.emplace_back(LogicalTypeId::UBIGINT);
 
     vector<pair<string, LogicalType>> compression_stats_children = {
-        {"type", LogicalType::VARCHAR}, 
-        {"count", LogicalType::UBIGINT}
+        {"type", LogicalTypeId::VARCHAR}, 
+        {"count", LogicalTypeId::UBIGINT}
     }; 
 
 	names.emplace_back("compression");
 	return_types.emplace_back(LogicalType::LIST(LogicalType::STRUCT(compression_stats_children)));
 
     vector<pair<string, LogicalType>> rostype_children = {
-        {"name", LogicalType::VARCHAR}, 
-        {"md5_sum", LogicalType::VARCHAR}, 
-        {"definiton", LogicalType::VARCHAR}};  
+        {"name", LogicalTypeId::VARCHAR}, 
+        {"md5_sum", LogicalTypeId::VARCHAR}, 
+        {"definiton", LogicalTypeId::VARCHAR}};  
     LogicalType rostype = LogicalType::STRUCT(rostype_children);  
 
     names.emplace_back("types");
 	return_types.emplace_back(LogicalType::LIST(rostype));
 
 	vector<pair<string, LogicalType>> topic_children = {
-        {"name", LogicalType::VARCHAR}, 
-        {"type", LogicalType::VARCHAR},
-        {"messages", LogicalType::UBIGINT}};  
+        {"name", LogicalTypeId::VARCHAR}, 
+        {"type", LogicalTypeId::VARCHAR},
+        {"messages", LogicalTypeId::UBIGINT}};  
 
     LogicalType topictype = LogicalType::STRUCT(topic_children); 
 
@@ -132,10 +133,12 @@ void RosBagInfoOperatorData::LoadBagInfoData(ClientContext& context, const vecto
         }
     }
     map<string, uint32_t> chunk_compression_stats; 
+    uint32_t total_messages = 0; 
     for (const auto& chunk: metadata.chunks ) {
         start_time = MinValue(chunk.info.start_time, start_time); 
         end_time = MaxValue(chunk.info.end_time, end_time); 
         chunk_compression_stats[chunk.compression]++; 
+        total_messages += chunk.info.message_count;
     }
 
 	DataChunk current_chunk;
@@ -144,8 +147,8 @@ void RosBagInfoOperatorData::LoadBagInfoData(ClientContext& context, const vecto
     current_chunk.SetValue(0, 1, Value::INTERVAL(0, 0, (end_time.to_nsec() - start_time.to_nsec()) * 1e3)); 
     current_chunk.SetValue(0, 2, Value::TIMESTAMPNS(timestamp_t(start_time.to_nsec())));
     current_chunk.SetValue(0, 3, Value::TIMESTAMPNS(timestamp_t(end_time.to_nsec()))); 
-    current_chunk.SetValue(0, 4, Value::UBIGINT(reader->NumMessages()));
-    current_chunk.SetValue(0, 5, Value::UBIGINT(reader->NumChunks()));
+    current_chunk.SetValue(0, 4, Value::UBIGINT(total_messages));
+    current_chunk.SetValue(0, 5, Value::UBIGINT(metadata.chunks.size()));
 
     vector<Value> compression_list; 
     for (const auto& stat: chunk_compression_stats) {
@@ -180,7 +183,7 @@ void RosBagInfoOperatorData::LoadBagInfoData(ClientContext& context, const vecto
 // Bind
 //===--------------------------------------------------------------------===//
 template <RosBagInfoOperatorType TYPE>
-unique_ptr<FunctionData> RosBagBind(ClientContext &context, TableFunctionBindInput &input,
+static unique_ptr<FunctionData> RosBagBind(ClientContext &context, TableFunctionBindInput &input,
                                              vector<LogicalType> &return_types, vector<string> &names) {
 	switch (TYPE) {
 	case RosBagInfoOperatorType::INFO:
@@ -199,7 +202,7 @@ unique_ptr<FunctionData> RosBagBind(ClientContext &context, TableFunctionBindInp
 
 
 template <RosBagInfoOperatorType TYPE>
-unique_ptr<GlobalTableFunctionState> RosBagInit(ClientContext &context, TableFunctionInitInput &input) {
+static unique_ptr<GlobalTableFunctionState> RosBagInit(ClientContext &context, TableFunctionInitInput &input) {
 	auto &bind_data = input.bind_data->Cast<RosBagInfoBindData>();
 	auto result = make_uniq<RosBagInfoOperatorData>(context, bind_data.return_types);
 
@@ -220,7 +223,7 @@ unique_ptr<GlobalTableFunctionState> RosBagInit(ClientContext &context, TableFun
 }
 
 template <RosBagInfoOperatorType TYPE>
-void RosBagImplementation(ClientContext &context, TableFunctionInput &data_p, DataChunk &output) {
+static void RosBagImplementation(ClientContext &context, TableFunctionInput &data_p, DataChunk &output) {
 	auto &data = data_p.global_state->Cast<RosBagInfoOperatorData>();
 	auto &bind_data = data_p.bind_data->Cast<RosBagInfoBindData>();
 
