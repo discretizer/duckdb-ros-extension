@@ -105,6 +105,8 @@ void RosBagInfoOperatorData::BindInfoData(vector<LogicalType> &return_types, vec
 }
 
 void RosBagInfoOperatorData::LoadBagInfoData(ClientContext& context, const vector<LogicalType>& return_types, const string &file_path) {
+    collection.Reset();
+
     RosReaderOptions options; 
     auto reader = make_uniq<RosBagReader>(context, options, file_path); 
 
@@ -118,13 +120,15 @@ void RosBagInfoOperatorData::LoadBagInfoData(ClientContext& context, const vecto
     map<string, TopicInfo> topic_stats;
     map<string, TypeInfo> type_stats;  
 
+    uint32_t total_messages = 0; 
+    
     for (const auto& connection: metadata.connections) {
         auto& current_topic_stat = topic_stats[connection.topic]; 
         
         // TODO: throw some kind of warning if topic connection types don't match
         current_topic_stat.type_name = connection.data.type; 
         current_topic_stat.messages += connection.data.message_count; 
-
+        total_messages += connection.data.message_count; 
         auto& current_type_stat = type_stats[connection.data.type]; 
         
         if (connection.data.message_definition.size() > current_type_stat.definition.size()) {
@@ -133,50 +137,91 @@ void RosBagInfoOperatorData::LoadBagInfoData(ClientContext& context, const vecto
         }
     }
     map<string, uint32_t> chunk_compression_stats; 
-    uint32_t total_messages = 0; 
     for (const auto& chunk: metadata.chunks ) {
         start_time = MinValue(chunk.info.start_time, start_time); 
         end_time = MaxValue(chunk.info.end_time, end_time); 
         chunk_compression_stats[chunk.compression]++; 
-        total_messages += chunk.info.message_count;
+        
     }
 
 	DataChunk current_chunk;
-	current_chunk.Initialize(context, return_types, 1);
+	current_chunk.Initialize(context, return_types);
     current_chunk.SetValue(0, 0, Value(reader->GetFileName())); //Return file name 
-    current_chunk.SetValue(0, 1, Value::INTERVAL(0, 0, (end_time.to_nsec() - start_time.to_nsec()) * 1e3)); 
-    current_chunk.SetValue(0, 2, Value::TIMESTAMPNS(timestamp_t(start_time.to_nsec())));
-    current_chunk.SetValue(0, 3, Value::TIMESTAMPNS(timestamp_t(end_time.to_nsec()))); 
-    current_chunk.SetValue(0, 4, Value::UBIGINT(total_messages));
-    current_chunk.SetValue(0, 5, Value::UBIGINT(metadata.chunks.size()));
+    current_chunk.SetValue(1, 0, Value::INTERVAL(0, 0, ((end_time.to_nsec() - start_time.to_nsec()) * 1000ULL))); 
+    current_chunk.SetValue(2, 0, Value::TIMESTAMPNS(timestamp_t(start_time.to_nsec())));
+    current_chunk.SetValue(3, 0, Value::TIMESTAMPNS(timestamp_t(end_time.to_nsec()))); 
+    current_chunk.SetValue(4, 0, Value::UBIGINT(total_messages));
+    current_chunk.SetValue(5, 0, Value::UBIGINT(metadata.chunks.size()));
 
-    vector<Value> compression_list; 
+    auto &compression_col = current_chunk.data[6]; 
+
+    auto compression_list_entries = FlatVector::GetData<list_entry_t>(compression_col);
+    auto &compression_list_validity = FlatVector::Validity(compression_col);
+
+    compression_list_entries->offset = 0; 
+    compression_list_entries->length = chunk_compression_stats.size(); 
+
+    compression_list_validity.AllValid(); 
+
+    ListVector::SetListSize(compression_col, chunk_compression_stats.size());
+    ListVector::Reserve(compression_col, chunk_compression_stats.size());
+
+    auto& compression_entries = StructVector::GetEntries(ListVector::GetEntry(compression_col));
+    
+    idx_t comp_idx = 0; 
     for (const auto& stat: chunk_compression_stats) {
-        compression_list.emplace_back(Value::STRUCT({
-            {"type", Value(stat.first)}, 
-            {"count", Value::UBIGINT(stat.second)}
-        })); 
-    }
-    current_chunk.SetValue(0, 6, Value::LIST(compression_list));
+        compression_entries[0]->SetValue(comp_idx, Value(stat.first)); 
+        compression_entries[1]->SetValue(comp_idx, Value::UBIGINT(stat.second));
 
-    vector<Value> type_list; 
-    for (const auto& stat: type_stats ) {
-        type_list.emplace_back(Value::STRUCT({
-            {"name", Value(stat.first)},
-            {"md5_sum", Value(stat.second.md5)},
-            {"definition", Value(stat.second.definition)}
-        })); 
+        comp_idx++;  
     }
-    current_chunk.SetValue(0, 7, Value::LIST(type_list));
+   
+    auto& type_list_col = current_chunk.data[7]; 
+    auto  type_list_entries = FlatVector::GetData<list_entry_t>(type_list_col);
+    auto &type_list_validity = FlatVector::Validity(type_list_col);
 
-    vector<Value> topic_list; 
-    for (const auto& stats: topic_stats ) {
-        topic_list.emplace_back(Value::STRUCT({
-            {"name", Value(stats.first)}, 
-            {"type", Value(stats.second.type_name)}, 
-            {"messages", Value::UBIGINT(stats.second.messages)}
-        })); 
+    type_list_validity.AllValid(); 
+
+    type_list_entries->offset = 0; 
+    type_list_entries->length = type_stats.size(); 
+
+    ListVector::SetListSize(type_list_col, type_stats.size());
+    ListVector::Reserve(type_list_col, type_stats.size());
+    auto& type_entries = StructVector::GetEntries(ListVector::GetEntry(type_list_col));
+
+    idx_t type_idx = 0; 
+    for (const auto& stat: type_stats) {
+        type_entries[0]->SetValue(type_idx, Value(stat.first));
+        type_entries[1]->SetValue(type_idx, Value(stat.second.md5)); 
+        type_entries[2]->SetValue(type_idx, Value(stat.second.definition)); 
+        type_idx++; 
     }
+
+    auto &topic_list_col = current_chunk.data[8]; 
+    auto  topic_list_entries = FlatVector::GetData<list_entry_t>(topic_list_col);
+    auto &topic_list_validity = FlatVector::Validity(topic_list_col);
+
+    topic_list_validity.AllValid(); 
+
+    topic_list_entries->offset = 0; 
+    topic_list_entries->length = topic_stats.size(); 
+
+    ListVector::SetListSize(topic_list_col, topic_stats.size());
+    ListVector::Reserve(topic_list_col, topic_stats.size());
+    
+    auto& topic_entries = StructVector::GetEntries(ListVector::GetEntry(topic_list_col));
+    idx_t topic_idx = 0; 
+    for (const auto& stat: topic_stats) {
+        topic_entries[0]->SetValue(topic_idx, Value(stat.first)); 
+        topic_entries[1]->SetValue(topic_idx, Value(stat.second.type_name));
+        topic_entries[2]->SetValue(topic_idx, Value::UBIGINT(stat.second.messages)); 
+        topic_idx++; 
+    }
+
+
+    current_chunk.SetCardinality(1);
+	collection.Append(current_chunk);
+	collection.InitializeScan(scan_state);
 }
 
 //===--------------------------------------------------------------------===//

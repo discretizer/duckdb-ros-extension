@@ -65,8 +65,8 @@ class RosValue {
       return double(secs) + double(nsecs) / 1e9;
     }
 
-    long to_nsec() const {
-      return long(secs) * long(1e9) + long(nsecs);
+    long long to_nsec() const {
+      return long long(secs) * long long(1e9) + long long(nsecs);
     }
 
     TimeValue() {};

@@ -105,10 +105,13 @@ void readField(const std::string_view& data, std::string& value) {
 } 
 
 void readField(const std::string_view& data, RosValue::ros_time_t& time) {
-    uint64_t usec; 
-    readField(data, usec);
+    struct timeval_t {
+        uint32_t sec;
+        uint32_t nsec; 
+    } timeval; 
+    readField(data, timeval);
 
-    time = RosValue::ros_time_t(usec / 1000000000, usec % 10000000000); 
+    time = RosValue::ros_time_t(timeval.sec, timeval.nsec); 
 }
 
 template <typename T> 
