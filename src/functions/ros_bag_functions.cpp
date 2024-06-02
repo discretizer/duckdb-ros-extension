@@ -147,7 +147,7 @@ void RosBagInfoOperatorData::LoadBagInfoData(ClientContext& context, const vecto
 	DataChunk current_chunk;
 	current_chunk.Initialize(context, return_types);
     current_chunk.SetValue(0, 0, Value(reader->GetFileName())); //Return file name 
-    current_chunk.SetValue(1, 0, Value::INTERVAL(0, 0, ((end_time.to_nsec() - start_time.to_nsec()) * 1000ULL))); 
+    current_chunk.SetValue(1, 0, Value::INTERVAL(0, 0, ((end_time.to_nsec() - start_time.to_nsec()) / 1000ULL))); 
     current_chunk.SetValue(2, 0, Value::TIMESTAMPNS(timestamp_t(start_time.to_nsec())));
     current_chunk.SetValue(3, 0, Value::TIMESTAMPNS(timestamp_t(end_time.to_nsec()))); 
     current_chunk.SetValue(4, 0, Value::UBIGINT(total_messages));
