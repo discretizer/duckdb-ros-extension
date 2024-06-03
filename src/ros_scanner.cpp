@@ -84,6 +84,8 @@ public:
 		multi_file_reader_state(bind_data.multi_file_reader->InitializeGlobalState(
 		    context, bind_data.ros_options.file_options, bind_data.reader_bind, *bind_data.file_list,
 		    bind_data.initial_reader->GetTypes(), bind_data.initial_reader->GetNames(), col_ids)),
+		file_index(0), 
+		chunk_index(), 
 		column_ids(col_ids),
 		max_threads(MaxThreadsHelper(context, bind_data)), 
 		batch_index(0)
@@ -106,36 +108,36 @@ public:
 	bool GetNext(ClientContext &context, const RosBindData &bind_data, RosLocalState& local_state) 
 	{
 		unique_lock global_lock(lock); 
-		std::optional<bool> result; 
+		std::optional<bool> status; 
 		do {
 			if (error_opening_file) {
-				result = false; 
+				status = false; 
 			} else if (file_index >= readers.size() && ResizeFiles(bind_data)) {
-				result = false; 
+				status = false; 
 			} else if (readers[file_index].file_state == RosFileState::OPEN) {
-				if (chunk_index != readers[file_index].reader->GetChunkSet().cend()) {
+				if (chunk_index != readers[file_index].reader->GetTopicChunkSet().cend()) {
 					local_state.reader = readers[file_index].reader;
 					// dequeue chunks until we're close too (but hopefullu still below the vector size)
 					local_state.reader->InitializeScan(local_state.scan_state, chunk_index); 
 					local_state.batch_index = batch_index++; 
+
+					status =  true; 
 				} else {
 					readers[file_index].file_state = RosFileState::CLOSED; 
 					readers[file_index].reader = nullptr; 
+					chunk_index.reset(); 
 					file_index++; 
-
-					if (file_index >= bind_data.file_list->GetTotalFileCount()) {
-						result = false; 
-					}
 				}
-			} else if (TryOpenNextFile(context, bind_data, local_state, global_lock)) {
+			} 
+			if (TryOpenNextFile(context, bind_data, local_state, global_lock)) {
 				; // Statement intentionally blank 
 			} else {
 				if (readers[file_index].file_state == RosFileState::OPENING) {
 					WaitForFile(global_lock); 
 				}
 			}
-		} while(!result.has_value()); 	
-		return result.value(); 
+		} while(!status.has_value()); 	
+		return status.value(); 
 	}
 
 private: 
@@ -238,7 +240,7 @@ public:
 	atomic<idx_t> file_index;
 
 	//! Current chunk index location to read 
-	RosBagReader::ChunkSet::const_iterator chunk_index;  
+	std::optional<RosBagReader::ChunkSet::const_iterator> chunk_index;  
 
 	//! Current column_ids (past in from input on creation)
 	//! Used in MultiFileReader::InitializeReader
@@ -279,8 +281,9 @@ static unique_ptr<FunctionData> RosBagBindInternal(ClientContext &context,
 	 
 	result->multi_file_reader=std::move(multi_file_reader); 
 	result->file_list = std::move(file_list);
-	result->initial_file_chunk_count = initial_reader->GetChunkSet().size(); 
-	result->initial_file_cardinality = initial_reader->NumMessages(); 
+	result->initial_file_chunk_count = initial_reader->GetTopicChunkSet().size(); 
+	result->initial_file_cardinality = initial_reader->NumTopicMessages(); 
+	result->initial_reader = initial_reader; 
 	result->ros_options = ros_options;  
 	
 	return std::move(result); 
@@ -296,7 +299,6 @@ static unique_ptr<FunctionData> RosBagBind(ClientContext &context, TableFunction
 	auto file_list = multi_file_reader->CreateFileList(context, input.inputs[0]); 
 
 	RosReaderOptions ros_options;
-	ros_options.topic = StringValue::Get(input.inputs[1]); 
 	for ( auto& kv: input.named_parameters) {
 		if (multi_file_reader->ParseOption(kv.first, kv.second, ros_options.file_options, context)) {
 			continue; 
@@ -308,6 +310,12 @@ static unique_ptr<FunctionData> RosBagBind(ClientContext &context, TableFunction
 		if (loption == "rx_timestamp_col") {
 			ros_options.rx_timestamp_col = StringValue::Get(kv.second); 
 		}
+		if (loption == "topic") {
+			ros_options.topic = StringValue::Get(kv.second); 
+		}
+	}
+	if(ros_options.topic == "") {
+		throw BinderException("Must specify a topic to to the rosbag reader"); 
 	}
 
 	return RosBagBindInternal(context, std::move(multi_file_reader), std::move(file_list), return_types, names, ros_options); 
@@ -346,7 +354,7 @@ static unique_ptr<LocalTableFunctionState> RosBagInitLocal(ExecutionContext &con
 
 	auto result = make_uniq<RosLocalState>();
 
-	if (gstate.GetNext(context.client, bind_data, *result)) {
+	if (!gstate.GetNext(context.client, bind_data, *result)) {
 		return nullptr; 
 	}
 	return std::move(result); 

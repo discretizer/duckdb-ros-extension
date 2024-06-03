@@ -55,6 +55,9 @@ public:
         return std::string_view(reinterpret_cast<const char *>(data.get()), static_cast<size_t>(data_len)); 
     }
 
+    uint32_t GetHeaderLength() {return header_len; }
+    uint32_t GetDataLength() {return data_len; }
+
 private: 
     Allocator& allocator; 
  

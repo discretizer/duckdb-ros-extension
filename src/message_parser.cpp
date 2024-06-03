@@ -18,12 +18,15 @@ const RosValue::Pointer MessageParser::parse() {
 
 void MessageParser::initObject(size_t object_offset, const RosMsgTypes::BaseMsgDef &object_definition) {
   const size_t children_offset = ros_values_offset;
-  std::get<RosValue::object_info_t>(ros_values->at(object_offset).info_).children.base = ros_values;
-  std::get<RosValue::object_info_t>(ros_values->at(object_offset).info_).children.offset = children_offset;
-  std::get<RosValue::object_info_t>(ros_values->at(object_offset).info_).children.length = 0;
+  auto& children = std::get<RosValue::object_info_t>(ros_values->at(object_offset).info_).children; 
+
+  children.base = ros_values;
+  children.offset = children_offset;
+  children.length = 0;
+
   for (auto &member: object_definition.members()) {
     if (member.index() == 0) {
-      auto& field = std::get<RosMsgTypes::FieldDef>(member);
+      auto field = std::get<RosMsgTypes::FieldDef>(member);
       emplaceField(field);
     }
   }
@@ -31,8 +34,11 @@ void MessageParser::initObject(size_t object_offset, const RosMsgTypes::BaseMsgD
   for (auto &member: object_definition.members()) {
     if (member.index() == 0) {
       auto& field = std::get<RosMsgTypes::FieldDef>(member);
-      const size_t child_offset = children_offset + std::get<RosValue::object_info_t>(ros_values->at(object_offset).info_).children.length++;
-      switch (ros_values->at(child_offset).type_) {
+      
+      const size_t child_offset = children_offset + children.length++;
+      const auto child_type = ros_values->at(child_offset).type_; 
+
+      switch (child_type) {
         case RosValue::Type::object: {
           auto& embedded_type = field.typeDefinition();
           initObject(child_offset, embedded_type);

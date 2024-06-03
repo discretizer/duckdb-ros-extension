@@ -21,6 +21,8 @@
 #include "ros_reader_options.hpp"
 #include "resizable_buffer.hpp"
 
+#include <optional>
+
 namespace duckdb{
 
 class RosBagMetadata; 
@@ -51,10 +53,10 @@ public:
     const string& Topic() const;
     const RosReaderOptions& Options() const; 
 
-    size_t NumChunks() const; 
-    size_t NumMessages() const; 
+    size_t NumTopicChunks() const; 
+    size_t NumTopicMessages() const; 
+    const ChunkSet& GetTopicChunkSet() const;
 
-    const ChunkSet& GetChunkSet() const;
     const RosBagTypes::chunk_t& GetChunk(size_t idx) const; 
 
     const vector<LogicalType>& GetTypes() const;
@@ -84,7 +86,7 @@ public:
 	    static unique_ptr<ScanState> Deserialize(Deserializer &deserializer);
     };
 
-    void InitializeScan(RosBagReader::ScanState& scan, ChunkSet::const_iterator& current_chunk); 
+    void InitializeScan(RosBagReader::ScanState& scan, std::optional<ChunkSet::const_iterator>& current_chunk); 
     void Scan(ScanState& scan, DataChunk& result);
 private: 
     struct TopicIndex {

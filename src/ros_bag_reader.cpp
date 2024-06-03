@@ -154,18 +154,21 @@ LoadMetadata(Allocator &allocator, FileHandle &file_handle) {
      */
     for (size_t i = 0; i < chunk_count; i++) {
         auto& info = metadata->chunk_infos[i];
-
-        // TODO: The chunk infos are not necessarily
-        // Revisit this logic if seeking back and forth across the file causes a slowdown
-        file_handle.Seek(info.chunk_pos); 
-        record_parser.Read(file_handle, true); 
         RosBagTypes::chunk_t chunk; 
 
-        chunk.offset = file_handle.SeekPosition(); 
+        chunk.offset = info.chunk_pos; 
+        // TODO: The chunk infos are not necessarily
+        // Revisit this logic if seeking back and forth across the file causes a slowdown
+       
+        file_handle.Seek(info.chunk_pos); 
+        record_parser.Read(file_handle, true); 
+        
         readFields(record_parser.Header(), 
             field("compression", chunk.compression), 
             field("size", chunk.uncompressed_size)
         );  
+        chunk.header_len = record_parser.GetHeaderLength(); 
+        chunk.data_len = record_parser.GetDataLength(); 
 
         if (!(chunk.compression == "lz4" || chunk.compression == "bz2" || chunk.compression == "none")) {
             throw std::runtime_error("Unsupported compression type: " + chunk.compression);
@@ -198,8 +201,8 @@ LoadMetadata(Allocator &allocator, FileHandle &file_handle) {
     return make_shared_ptr<RosBagMetadataCache>(std::move(metadata), current_time);
 }
 
-RosBagReader::RosBagReader(ClientContext& context, RosReaderOptions options, string file_name):
-    options(std::move(options)), allocator(BufferAllocator::Get(context))
+RosBagReader::RosBagReader(ClientContext& context, RosReaderOptions ros_options, string file_name):
+    options(std::move(ros_options)), allocator(BufferAllocator::Get(context))
 {
 	file_handle = FileSystem::GetFileSystem(context).OpenFile(file_name, FileOpenFlags::FILE_FLAGS_READ);
 	if (!file_handle->CanSeek()) {
@@ -251,22 +254,21 @@ const RosReaderOptions& RosBagReader::Options() const {
     return options; 
 }
 
-size_t RosBagReader::NumChunks() const {
+size_t RosBagReader::NumTopicChunks() const {
     return topic_index->chunk_set.size(); 
 } 
 
-size_t RosBagReader::NumMessages() const {
+size_t RosBagReader::NumTopicMessages() const {
     return topic_index->message_cnt; 
 }
 
-const RosBagReader::ChunkSet& RosBagReader::GetChunkSet() const {
+const RosBagReader::ChunkSet& RosBagReader::GetTopicChunkSet() const {
     return topic_index->chunk_set; 
 }
 
 const RosBagTypes::chunk_t& RosBagReader::GetChunk(size_t index) const {
     return metadata->metadata->chunks[index]; 
 }
-
 const vector<LogicalType>& RosBagReader::GetTypes() const {
     return return_types; 
 }
@@ -308,8 +310,9 @@ void RosBagReader::Scan(RosBagReader::ScanState& scan_state, DataChunk& result) 
         // neccessairy
         if ((scan_state.current_buffer == nullptr) || 
             (scan_state.current_buffer->len == 0)) {
+            constexpr size_t LENGTH_OFFSET = 8U; // Offsets of length fields: 4 bytes + 4bytes;
             scan_state.read_buffer.resize(allocator, chunk.data_len); 
-            file_handle->Read(scan_state.read_buffer.ptr, chunk.data_len, chunk.offset + chunk.header_len); 
+            file_handle->Read(scan_state.read_buffer.ptr, chunk.data_len, chunk.offset + chunk.header_len + LENGTH_OFFSET); 
             if (chunk.compression != "none") {
                 scan_state.decompression_buffer.resize(allocator, chunk.uncompressed_size); 
                 chunk.decompress(scan_state.read_buffer.ptr, scan_state.decompression_buffer.ptr);
@@ -360,14 +363,17 @@ void RosBagReader::Scan(RosBagReader::ScanState& scan_state, DataChunk& result) 
     result.SetCardinality(MinValue(message_values.size(), size_t(STANDARD_VECTOR_SIZE))); 
 }
 
-void RosBagReader::InitializeScan(RosBagReader::ScanState& scan, RosBagReader::ChunkSet::const_iterator& current_chunk) {
+void RosBagReader::InitializeScan(RosBagReader::ScanState& scan, std::optional<RosBagReader::ChunkSet::const_iterator>& current_chunk) {
     scan.expected_message_count = 0;  
+    if (!current_chunk.has_value()) {
+        current_chunk = GetTopicChunkSet().begin(); 
+    }
     do {
-        scan.chunks.emplace_hint(scan.chunks.cend(), current_chunk->idx); 
-        scan.expected_message_count += current_chunk->message_cnt; 
-        current_chunk++; 
-    } while((current_chunk != GetChunkSet().cend()) && 
-            (current_chunk->message_cnt + scan.expected_message_count <= STANDARD_VECTOR_SIZE));     
+        scan.chunks.emplace_hint(scan.chunks.cend(), current_chunk.value()->idx); 
+        scan.expected_message_count += current_chunk.value()->message_cnt; 
+        current_chunk.value()++; 
+    } while((current_chunk != GetTopicChunkSet().cend()) && 
+            (current_chunk.value()->message_cnt + scan.expected_message_count <= STANDARD_VECTOR_SIZE));     
 }
 
 
