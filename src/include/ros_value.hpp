@@ -215,7 +215,14 @@ class RosValue {
       throw std::runtime_error("Cannot create an object or array with this constructor");
     }
   }
-
+  RosValue(const Type type)
+    : type_(type)
+    , info_(std::in_place_type<primitive_info_t>,  0, std::string_view())
+  {
+    if (type_ == Type::object || type_ == Type::array || type_ == Type::primitive_array) {
+      throw std::runtime_error("Cannot create an object or array with this constructor");
+    }
+  }
   RosValue(const shared_ptr<unordered_map<string, size_t>>& field_indexes)
     : type_(Type::object)
     , info_(std::in_place_type<object_info_t>, field_indexes)
