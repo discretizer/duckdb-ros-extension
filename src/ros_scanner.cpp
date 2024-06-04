@@ -128,13 +128,10 @@ public:
 					chunk_index.reset(); 
 					file_index++; 
 				}
-			} 
-			if (TryOpenNextFile(context, bind_data, local_state, global_lock)) {
+			} else if (TryOpenNextFile(context, bind_data, local_state, global_lock)) {
 				; // Statement intentionally blank 
-			} else {
-				if (readers[file_index].file_state == RosFileState::OPENING) {
-					WaitForFile(global_lock); 
-				}
+			} else 	if (readers[file_index].file_state == RosFileState::OPENING) {
+				WaitForFile(global_lock); 
 			}
 		} while(!status.has_value()); 	
 		return status.value(); 
@@ -370,10 +367,9 @@ static void RosBagScanImplementation(ClientContext &context, TableFunctionInput 
 	auto &bind_data = data_p.bind_data->CastNoConst<RosBindData>();
 	do {
 		data.reader->Scan(data.scan_state, output); 
-		bind_data.multi_file_reader->FinalizeChunk(context, bind_data.reader_bind, data.reader->reader_data,
-				                                   output, gstate.multi_file_reader_state);
-
 		if (output.size() > 0) {
+			bind_data.multi_file_reader->FinalizeChunk(context, bind_data.reader_bind, data.reader->reader_data,
+				                                   output, gstate.multi_file_reader_state);
 			return;
 		}
 		if (!gstate.GetNext(context, bind_data, data)) {

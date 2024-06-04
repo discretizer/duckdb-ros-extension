@@ -298,66 +298,72 @@ unique_ptr<RosBagReader::ScanState> RosBagReader::ScanState::Deserialize(Deseria
 }
 
 void RosBagReader::Scan(RosBagReader::ScanState& scan_state, DataChunk& result) {
+    if (scan_state.chunks.empty()) {
+        return; 
+    }
+
     vector<RosValue::Pointer> message_values;
     vector<RosValue::ros_time_t> message_rx_time; 
 
     message_values.reserve(scan_state.expected_message_count); 
     message_rx_time.reserve(scan_state.expected_message_count); 
-    for( auto chunk_idx: scan_state.chunks) {
-        auto chunk = GetChunk(chunk_idx); 
+    
+    auto front = scan_state.chunks.begin();
+    auto chunk_idx = *front;
+    scan_state.chunks.erase(front);
 
-        // If we don't have a current buffer, lets create one and decompress the data into it if 
-        // neccessairy
-        if ((scan_state.current_buffer == nullptr) || 
-            (scan_state.current_buffer->len == 0)) {
-            constexpr size_t LENGTH_OFFSET = 8U; // Offsets of length fields: 4 bytes + 4bytes;
-            scan_state.read_buffer.resize(allocator, chunk.data_len); 
-            file_handle->Read(scan_state.read_buffer.ptr, chunk.data_len, chunk.offset + chunk.header_len + LENGTH_OFFSET); 
-            if (chunk.compression != "none") {
-                scan_state.decompression_buffer.resize(allocator, chunk.uncompressed_size); 
-                chunk.decompress(scan_state.read_buffer.ptr, scan_state.decompression_buffer.ptr);
-                scan_state.read_buffer.inc(chunk.data_len);  
-                scan_state.current_buffer = &scan_state.decompression_buffer; 
-            } else {
-                scan_state.current_buffer = &scan_state.read_buffer; 
-            }
+    auto chunk = GetChunk(chunk_idx); 
+
+    // If we don't have a current buffer, lets create one and decompress the data into it if 
+    // neccessairy
+    if ((scan_state.current_buffer == nullptr) || 
+        (scan_state.current_buffer->len == 0)) {
+        constexpr size_t LENGTH_OFFSET = 8U; // Offsets of length fields: 4 bytes + 4bytes;
+        scan_state.read_buffer.resize(allocator, chunk.data_len); 
+        file_handle->Read(scan_state.read_buffer.ptr, chunk.data_len, chunk.offset + chunk.header_len + LENGTH_OFFSET); 
+        if (chunk.compression != "none") {
+            scan_state.decompression_buffer.resize(allocator, chunk.uncompressed_size); 
+            chunk.decompress(scan_state.read_buffer.ptr, scan_state.decompression_buffer.ptr);
+            scan_state.read_buffer.inc(chunk.data_len);  
+            scan_state.current_buffer = &scan_state.decompression_buffer; 
+        } else {
+            scan_state.current_buffer = &scan_state.read_buffer; 
         }
+    }
 
-        // Parse through the buffer reading each record 
-        // because we're only parsing one topic - a future optimization 
-        // could be to generate a message index for each topic. 
-        // For now see the performace we get by just looping quickly through all 
-        // the messages; 
-        while (scan_state.current_buffer->len != 0) {
-            RosBufferedRecordParser record(*scan_state.current_buffer); 
-            uint8_t op; 
-            uint32_t conn_id; 
-            RosValue::ros_time_t timestamp; 
+    // Parse through the buffer reading each record 
+    // because we're only parsing one topic - a future optimization 
+    // could be to generate a message index for each topic. 
+    // For now see the performace we get by just looping quickly through all 
+    // the messages; 
+    while (scan_state.current_buffer->len != 0) {
+        RosBufferedRecordParser record(*scan_state.current_buffer); 
+        uint8_t op; 
+        uint32_t conn_id; 
+        RosValue::ros_time_t timestamp; 
 
-            readFields( record.Header(),
-                field("op", op), 
-                field("conn", conn_id),
-                field("time", timestamp) 
-            );
-            switch (RosBagTypes::op(op)) {
-                case RosBagTypes::op::MESSAGE_DATA: {
-                    if (topic_index->connection_ids.count(conn_id) == 0) {
-                        continue;
-                    }
-                    MessageParser parser(record.Data(), *message_def); 
-
-                    message_values.emplace_back(parser.parse()); 
-                    message_rx_time.emplace_back(timestamp); 
-                }
-                case RosBagTypes::op::CONNECTION: {
+        readFields( record.Header(),
+            field("op", op), 
+            field("conn", conn_id),
+            field("time", timestamp) 
+        );
+        switch (RosBagTypes::op(op)) {
+            case RosBagTypes::op::MESSAGE_DATA: {
+                if (topic_index->connection_ids.count(conn_id) == 0) {
                     continue;
                 }
-                default: {
-                    throw std::runtime_error("Found unknown record type: " + std::to_string(static_cast<int>(op)));
-                }
+                MessageParser parser(record.Data(), *message_def); 
+
+                message_values.emplace_back(parser.parse()); 
+                message_rx_time.emplace_back(timestamp); 
+            }
+            case RosBagTypes::op::CONNECTION: {
+                continue;
+            }
+            default: {
+                throw std::runtime_error("Found unknown record type: " + std::to_string(static_cast<int>(op)));
             }
         }
-        
     }
     RosTransform::TransformMessages(options, message_values, message_rx_time, names, result.data); 
     result.SetCardinality(MinValue(message_values.size(), size_t(STANDARD_VECTOR_SIZE))); 
@@ -368,12 +374,10 @@ void RosBagReader::InitializeScan(RosBagReader::ScanState& scan, std::optional<R
     if (!current_chunk.has_value()) {
         current_chunk = GetTopicChunkSet().begin(); 
     }
-    do {
-        scan.chunks.emplace_hint(scan.chunks.cend(), current_chunk.value()->idx); 
-        scan.expected_message_count += current_chunk.value()->message_cnt; 
-        current_chunk.value()++; 
-    } while((current_chunk != GetTopicChunkSet().cend()) && 
-            (current_chunk.value()->message_cnt + scan.expected_message_count <= STANDARD_VECTOR_SIZE));     
+    
+    scan.chunks.emplace_hint(scan.chunks.cend(), current_chunk.value()->idx); 
+    scan.expected_message_count += current_chunk.value()->message_cnt; 
+    current_chunk.value()++; 
 }
 
 

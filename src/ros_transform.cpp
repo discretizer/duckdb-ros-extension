@@ -167,10 +167,10 @@ static bool TransformString(const vector<RosValue::Pointer>& value_list, Vector&
     auto data = FlatVector::GetData<string_t>(result);
 	auto &validity = FlatVector::Validity(result);
     validity.SetAllValid(value_list.size());
-    
+
     // Potentially catch exceptions here and set validity
 	for (size_t i = 0; i < value_list.size(); i++) {
-        data[i] = value_list[i]->as<std::string>(); 
+        data[i] = StringVector::AddString(result, value_list[i]->as<std::string>()); 
 	}
 	return true;
 }

@@ -88,8 +88,7 @@ const RosValue::Pointer RosValue::at(const size_t idx) const {
     auto array_info = std::get<primitive_array_info_t>(info_); 
     return RosValue::Pointer(
       array_info.element_type,
-      array_info.message_buffer,
-      array_info.offset + idx * primitiveTypeToSize(array_info.element_type)
+      array_info.message_buffer.substr(idx * primitiveTypeToSize(array_info.element_type))
     );
   } else {
     throw std::runtime_error("Value is not an array or object");

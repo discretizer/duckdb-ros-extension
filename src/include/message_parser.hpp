@@ -18,7 +18,6 @@ class MessageParser {
     std::string_view buffer,
     const RosMsgTypes::MsgDef& msg_def
   ):  message_buffer(buffer),
-      message_buffer_offset(0), 
       ros_values(make_shared_ptr<vector<RosValue>>()), 
       ros_values_offset(0), 
       msg_def(msg_def)
@@ -36,8 +35,7 @@ class MessageParser {
   void emplaceField(const RosMsgTypes::FieldDef &field);
 
   std::string_view message_buffer; 
-  size_t message_buffer_offset; 
-
+ 
   shared_ptr<vector<RosValue> > ros_values;
   size_t ros_values_offset;
 

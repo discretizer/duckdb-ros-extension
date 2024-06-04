@@ -207,9 +207,9 @@ class RosValue {
  private:
   struct _array_identifier {};
  public:
-  RosValue(const Type type, std::string_view message_buffer, const size_t offset)
+  RosValue(const Type type, std::string_view message_buffer)
     : type_(type)
-    , info_(std::in_place_type<primitive_info_t>, offset, message_buffer )
+    , info_(std::in_place_type<primitive_info_t>, message_buffer )
   {
     if (type_ == Type::object || type_ == Type::array || type_ == Type::primitive_array) {
       throw std::runtime_error("Cannot create an object or array with this constructor");
@@ -217,7 +217,7 @@ class RosValue {
   }
   RosValue(const Type type)
     : type_(type)
-    , info_(std::in_place_type<primitive_info_t>,  0, std::string_view())
+    , info_(std::in_place_type<primitive_info_t>, std::string_view())
   {
     if (type_ == Type::object || type_ == Type::array || type_ == Type::primitive_array) {
       throw std::runtime_error("Cannot create an object or array with this constructor");
@@ -233,9 +233,9 @@ class RosValue {
     , info_(std::in_place_type<array_info_t>)
   {
   }
-  RosValue(const Type element_type, std::string_view message_buffer)
+  RosValue(const Type element_type, size_t length)
     : type_(Type::primitive_array)
-    , info_(std::in_place_type<primitive_array_info_t>, element_type, message_buffer)
+    , info_(std::in_place_type<primitive_array_info_t>, element_type, length, std::string_view())
   {
   }
 
@@ -272,7 +272,7 @@ class RosValue {
     if (type_ == Type::array || type_ == Type::object) {
       return getChildren().length;
     } else if (type_ == Type::primitive_array) {
-      return std::get<primitive_array_info_t>(info_).length;
+      return static_cast<size_t>(std::get<primitive_array_info_t>(info_).length);
     } else {
       throw std::runtime_error("Value is not an array or an object");
     }
@@ -297,24 +297,22 @@ class RosValue {
 
  private:
   struct primitive_info_t {
-    primitive_info_t(size_t off, std::string_view buf)
-      : offset(off)
-      , message_buffer(buf)
+    primitive_info_t(std::string_view buf)
+      : message_buffer(buf)
     {}
-    size_t offset; 
     std::string_view message_buffer;
   };
 
   struct primitive_array_info_t {
-    primitive_array_info_t(const Type element_type, std::string_view message_buffer)
+    primitive_array_info_t(const Type element_type, int32_t length, std::string_view message_buffer)
       : element_type(element_type)
+      , length(length)
       , message_buffer(message_buffer)
     {
     }
 
     Type element_type;
-    size_t offset;
-    size_t length;
+    int32_t length;
     std::string_view message_buffer;
   };
 
@@ -334,9 +332,20 @@ class RosValue {
   std::variant<primitive_info_t, primitive_array_info_t, array_info_t, object_info_t> info_; 
   
   template<typename T>
-  const T& getPrimitive() const {
-    return reinterpret_cast<const T&>(std::get<primitive_info_t>(info_).message_buffer.at(std::get<primitive_info_t>(info_).offset));
+  typename std::enable_if<(std::alignment_of<T>::value > 1), T>::type
+  getPrimitive() const {
+    T value; 
+    std::get<primitive_info_t>(info_).message_buffer.copy(reinterpret_cast<char*>(&value), sizeof(T)); 
+    return value; 
   }
+
+  template<typename T>
+  typename std::enable_if<(std::alignment_of<T>::value == 1), const T&>::type
+  getPrimitive() const {
+    const char* value_ptr = std::get<primitive_info_t>(info_).message_buffer.data();
+    return *reinterpret_cast<const T*>(value_ptr); 
+  }
+
 
   const ros_value_list_t& getChildren() const {
     switch(type_) {
@@ -381,8 +390,8 @@ class RosValue::Pointer {
   {
   }
 
-  Pointer(const RosValue::Type type, std::string_view message_buffer, const size_t offset)
-    : info_(RosValue(type, message_buffer, offset))
+  Pointer(const RosValue::Type type, std::string_view message_buffer)
+    : info_(RosValue(type, message_buffer))
   {
   }
 
