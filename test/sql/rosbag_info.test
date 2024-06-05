@@ -1,0 +1,64 @@
+# name: test/sql/rosbag_info.test
+# description: Test rosbag_info function
+# group: [ros]
+require ros 
+
+# Confirm rosbag_info can create the appropriate info data 
+statement ok
+create table test_1_info as from rosbag_info('__WORKING_DIRECTORY__/test/data/test.bag');
+
+statement ok
+create table test_2_info as from rosbag_info('__WORKING_DIRECTORY__/test/data/test_2.bag');
+
+statement ok
+create table array_test_info as from rosbag_info('__WORKING_DIRECTORY__/test/data/array_test.bag');
+
+# Confirm rosbag_info and the extension works
+query I
+SELECT unnest(topics).name FROM test_1_info;
+----
+/base_pose_ground_truth
+/base_scan
+/luminar_pointcloud
+
+query I
+SELECT messages FROM test_1_info;
+----
+15
+
+query I
+SELECT chunks FROM test_1_info;
+----
+6
+
+# Confirm rosbag_info and the extension works
+query I
+SELECT unnest(topics).name FROM test_2_info;
+----
+chatter
+
+query I
+SELECT messages FROM test_2_info;
+----
+2
+
+query I
+SELECT chunks FROM test_2_info;
+----
+2
+
+# Confirm rosbag_info and the extension works
+query I
+SELECT unnest(topics).name FROM array_test_info;
+----
+/array_test
+
+query I
+SELECT messages FROM array_test_info;
+----
+20
+
+query I
+SELECT chunks FROM array_test_info;
+----
+1
