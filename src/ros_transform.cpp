@@ -155,7 +155,7 @@ static bool TransformTime(const vector<RosValue::Pointer>& value_list, Vector& r
     validity.SetAllValid(value_list.size()); 
 
     for (size_t i = 0; i < value_list.size(); i++) {
-        data[i] = Timestamp::FromEpochNanoSeconds(value_list[i]->as<RosValue::ros_time_t>().to_nsec()); 
+        data[i] = timestamp_t(value_list[i]->as<RosValue::ros_time_t>().to_nsec()); 
 	}
 	return true;
 }
@@ -166,7 +166,7 @@ static bool TransformTime(const vector<RosValue::ros_time_t>& value_list, Vector
     validity.SetAllValid(value_list.size()); 
 
     for (size_t i = 0; i < value_list.size(); i++) {
-        data[i] = Timestamp::FromEpochNanoSeconds(value_list[i].to_nsec()); 
+        data[i] = timestamp_t(value_list[i].to_nsec()); 
 	}
 	return true;
 }
@@ -177,7 +177,7 @@ static bool TransformInterval(const vector<RosValue::Pointer>& value_list, Vecto
     validity.SetAllValid(value_list.size()); 
 
     for (size_t i = 0; i < value_list.size(); i++) {
-        data[i] = Interval::FromMicro(static_cast<long long>(value_list[i]->as<RosValue::ros_time_t>().to_nsec()) * Interval::NANOS_PER_MICRO); 
+        data[i] = Interval::FromMicro(value_list[i]->as<RosValue::ros_time_t>().to_nsec() * Interval::NANOS_PER_MICRO); 
 	}
 	return true;
 }

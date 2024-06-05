@@ -18,16 +18,18 @@ const RosValue::Pointer MessageParser::parse() {
 
 void MessageParser::initObject(size_t object_offset, const RosMsgTypes::BaseMsgDef &object_definition) {
   const size_t children_offset = ros_values_offset;
-  auto& children = std::get<RosValue::object_info_t>(ros_values->at(object_offset).info_).children; 
-  children.base = ros_values;
-  children.offset = children_offset;
-  children.length = 0;
+
   for (auto &member: object_definition.members()) {
     if (member.index() == 0) {
       auto& field = std::get<RosMsgTypes::FieldDef>(member);
       emplaceField(field);
     }
   }
+
+  auto& children = std::get<RosValue::object_info_t>(ros_values->at(object_offset).info_).children; 
+  children.base = ros_values;
+  children.offset = children_offset;
+  children.length = 0;
 
   for (auto &member: object_definition.members()) {
     if (member.index() == 0) {

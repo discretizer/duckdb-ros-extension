@@ -78,7 +78,7 @@ public:
 
 	// 
 	RosGlobalState(ClientContext& context, const RosBindData &bind_data, const vector<column_t>& col_ids):
-		initial_reader(bind_data.initial_reader), 
+		initial_reader(std::move(bind_data.initial_reader)), 
 		readers(), 
 		file_list_scan(), 
 		multi_file_reader_state(bind_data.multi_file_reader->InitializeGlobalState(
@@ -90,15 +90,17 @@ public:
 		max_threads(MaxThreadsHelper(context, bind_data)), 
 		batch_index(0)
 	{
-		readers.reserve(bind_data.file_list->GetTotalFileCount()); 
-		for (auto file: bind_data.file_list->Files()) {
-			if (file == bind_data.file_list->GetFirstFile()) {
-				readers.emplace_back(initial_reader); 
-			} else {
-				readers.emplace_back(file); 
-			} 
+		bind_data.file_list->InitializeScan(file_list_scan);
+
+		if (initial_reader->GetFileName() != bind_data.file_list->GetFirstFile()) {
+			throw InternalException("First file from list ('%s') does not match first reader ('%s')",
+				                        initial_reader->GetFileName(), bind_data.file_list->GetFirstFile());
 		}
-		bind_data.file_list->InitializeScan(file_list_scan); 
+		readers.emplace_back(std::move(bind_data.initial_reader));
+		
+		string file_name;
+		file_index = file_list_scan.current_file_idx;
+		bind_data.file_list->Scan(file_list_scan, file_name);
 	}
 	
 	/// *** Overridden functions ** 
@@ -116,7 +118,7 @@ public:
 		do {
 			if (error_opening_file) {
 				status = false; 
-			} else if (file_index >= readers.size() && ResizeFiles(bind_data)) {
+			} else if (file_index >= readers.size() && !ResizeFiles(bind_data)) {
 				status = false; 
 			} else if (readers[file_index].file_state == RosFileState::OPEN) {
 				if (chunk_index != readers[file_index].reader->GetTopicChunkSet().cend()) {

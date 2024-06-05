@@ -1,10 +1,12 @@
-# Ros
+# Ros Data Plugin for DuckDB
 
-This repository is based on https://github.com/duckdb/extension-template, check it out if you want to build and ship your own DuckDB extension.
+This plugin alows you to read an import individual topics in ROS 1.0 bags into DuckDb as tables for analysis and export into other formats that DuckDb write (i.e. parquet). 
 
----
+The scheme for the individual tables is generated from the embedded message definition in the ROS Bag itself. 
 
-This extension, Ros, allow you to ... <extension_goal>.
+## Current Features
+
+* 
 
 
 ## Building

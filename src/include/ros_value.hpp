@@ -65,8 +65,8 @@ class RosValue {
       return double(secs) + double(nsecs) / 1e9;
     }
 
-    long to_nsec() const {
-      return long(secs) * long(1e9) + long(nsecs);
+    uint64_t to_nsec() const {
+      return uint64_t(secs) * uint64_t(1000000000) + uint64_t(nsecs);
     }
 
     TimeValue() {};
