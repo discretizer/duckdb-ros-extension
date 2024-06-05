@@ -13,9 +13,13 @@ class Lz4DecompressionCtx {
     }
   }
 
+  virtual ~Lz4DecompressionCtx() {
+    LZ4F_freeDecompressionContext(ctx_); 
+  }
+
  public:
   static Lz4DecompressionCtx& getInstance() {
-    static Lz4DecompressionCtx instance;
+    static thread_local Lz4DecompressionCtx instance;
     return instance;
   }
 

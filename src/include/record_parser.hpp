@@ -39,7 +39,7 @@ public:
         if (header_only) {
             file_handler.Seek(file_handler.SeekPosition() + data_len); 
         } else {
-            if (data_len > header.GetSize()) {
+            if (data_len > data.GetSize()) {
                 idx_t next_len = NextPowerOfTwo(data_len); 
                 data = allocator.Allocate(next_len);
             }
@@ -99,7 +99,8 @@ template <typename T>
 void readField(const std::string_view& data, T& value) {
     // So there are several subtle issues with just casting the pointer here; 
     // Pointer alignment and other issues prevent just raw (i.e. reinterpret_cast )
-    // casting.  Best just to memcpy. 
+    // casting.  Best just to memcpy.
+    D_ASSERT(data.size() == sizeof(T)); 
     std::memcpy(&value, data.begin(), data.size());
 } 
 

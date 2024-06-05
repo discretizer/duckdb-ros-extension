@@ -92,7 +92,11 @@ public:
 	{
 		readers.reserve(bind_data.file_list->GetTotalFileCount()); 
 		for (auto file: bind_data.file_list->Files()) {
-			readers.emplace_back(file); 
+			if (file == bind_data.file_list->GetFirstFile()) {
+				readers.emplace_back(initial_reader); 
+			} else {
+				readers.emplace_back(file); 
+			} 
 		}
 		bind_data.file_list->InitializeScan(file_list_scan); 
 	}
@@ -101,7 +105,8 @@ public:
 	/// @brief Maximum threads for the current reader
 	/// @return Maximum threads. 
 	idx_t MaxThreads() const override {
-		return max_threads; 
+		//return max_threads;
+		return 1;  
 	}
 
 	/// Populate the next local state from the 

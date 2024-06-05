@@ -94,6 +94,9 @@ struct RosBagTypes {
                                        + std::to_string(src_bytes_read));
         }
 
+        src += src_bytes_read; 
+        dst += dst_bytes_written; 
+
         src_bytes_left -= src_bytes_read;
         dst_bytes_left -= dst_bytes_written;
       }

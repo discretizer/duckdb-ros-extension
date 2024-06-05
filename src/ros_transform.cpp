@@ -57,9 +57,17 @@ LogicalType RosTransform::ConvertRosFieldType(const RosMsgTypes::FieldDef& def) 
         duck_type = primitiveToDuckType(def.type()); 
     }
     if (def.arraySize() > 0) {
-        duck_type = LogicalType::ARRAY(duck_type); 
+        if (def.type() == RosValue::Type::uint8) {
+            duck_type = LogicalType::BLOB; 
+        } else  {
+            duck_type = LogicalType::ARRAY(duck_type, def.arraySize());
+        }
     } else if (def.arraySize() == -1) {
-        duck_type = LogicalType::LIST(duck_type); 
+        if (def.type() == RosValue::Type::uint8) {
+            duck_type = LogicalType::BLOB; 
+        } else  {
+            duck_type = LogicalType::LIST(duck_type);
+        } 
     } 
     return duck_type; 
 }
@@ -71,12 +79,16 @@ static bool TransformTime(const vector<RosValue::ros_time_t>& value_list, Vector
 static bool TransformInterval(const vector<RosValue::Pointer>& value_list, Vector& result);
 static bool TransformString(const vector<RosValue::Pointer>& value_list, Vector& result);
 static bool TransformArrayToArray(const vector<RosValue::Pointer>& value_list, Vector& result);
+static bool TransformPrimitiveArrayToArray(const vector<RosValue::Pointer>& value_list, Vector& result);
 static bool TransformArrayToList(const vector<RosValue::Pointer>& value_list, Vector& result);
+static bool TransformPrimitiveArrayToList(const vector<RosValue::Pointer>& value_list, Vector& result);
+static bool TransformPrimitiveArrayToBlob(const vector<RosValue::Pointer>& value_list, Vector& result);
 static bool TransformObjectToStruct(const vector<RosValue::Pointer>& value_list, Vector& result);
 
 static bool TransformValues(const vector<RosValue::Pointer>& value_list, Vector& result) {
     // Sniff first element.  All should have the same type anyway. 
-    switch (value_list[0]->getType()) {
+    auto type = value_list[0]->getType(); 
+    switch (type) {
     case RosValue::Type::uint8:
         return TransformNumerical<uint8_t>(value_list, result); 
     case RosValue::Type::uint16 :
@@ -106,8 +118,15 @@ static bool TransformValues(const vector<RosValue::Pointer>& value_list, Vector&
     case RosValue::Type::ros_bool:
         return TransformNumerical<bool>(value_list, result); 
     case RosValue::Type::primitive_array:
+        if (value_list[0]->at(0)->getType() == RosValue::Type::uint8) {
+            return TransformPrimitiveArrayToBlob(value_list, result); 
+        } else if (result.GetType().id() == LogicalTypeId::ARRAY) {
+            return TransformPrimitiveArrayToArray(value_list, result); 
+        } else {
+            return TransformPrimitiveArrayToList(value_list, result); 
+        } 
     case RosValue::Type::array:
-        if (result.GetType() == LogicalTypeId::ARRAY) {
+        if (result.GetType().id() == LogicalTypeId::ARRAY) {
             return TransformArrayToArray(value_list, result); 
         } else {
             return TransformArrayToList(value_list, result); 
@@ -195,6 +214,22 @@ static bool TransformArrayToArray(const vector<RosValue::Pointer>& value_list, V
     return TransformValues(nested_values, ArrayVector::GetEntry(result)); 
 }
 
+static bool TransformPrimitiveArrayToArray(const vector<RosValue::Pointer>& value_list, Vector& result) {
+    size_t count = value_list.size(); 
+
+	// Initialize array vector
+	auto &result_validity = FlatVector::Validity(result);
+    result_validity.SetAllValid(count); 
+    auto data = ArrayVector::GetEntry(result).GetData(); 
+        
+    size_t offset = 0; 
+	for (idx_t i = 0; i < count; i++) {
+        memcpy(data + offset, value_list[i]->getPrimitiveArrayRosValueBuffer(), value_list[i]->getPrimitiveArrayRosValueBufferSize()); 
+        offset += value_list[i]->getPrimitiveArrayRosValueBufferSize(); 
+    }
+    return true; 
+}
+
 static bool TransformArrayToList(const vector<RosValue::Pointer>& value_list, Vector& result) {
     size_t count = value_list.size(); 
     auto list_entries = FlatVector::GetData<list_entry_t>(result);
@@ -223,6 +258,50 @@ static bool TransformArrayToList(const vector<RosValue::Pointer>& value_list, Ve
     }
     return TransformValues(nested_values, ListVector::GetEntry(result)); 
 }
+
+static bool TransformPrimitiveArrayToList(const vector<RosValue::Pointer>& value_list, Vector& result) {
+    size_t count = value_list.size(); 
+    auto list_entries = FlatVector::GetData<list_entry_t>(result);
+	auto &list_validity = FlatVector::Validity(result);
+
+    list_validity.SetAllValid(count);
+	idx_t offset = 0;
+
+    // loop through values once and get sizes and offsets
+	for (idx_t i = 0; i < count; i++) {
+		auto &entry = list_entries[i];
+		entry.offset = offset;
+		entry.length = value_list[i]->size();
+		offset += entry.length;
+	}
+
+	ListVector::SetListSize(result, offset);
+	ListVector::Reserve(result, offset);
+
+    auto data = ListVector::GetEntry(result).GetData(); 
+
+    size_t copy_offset = 0; 
+    for (idx_t i = 0; i < count; i++) {
+        memcpy(data + copy_offset, value_list[i]->getPrimitiveArrayRosValueBuffer(), value_list[i]->getPrimitiveArrayRosValueBufferSize()); 
+        copy_offset += value_list[i]->getPrimitiveArrayRosValueBufferSize(); 
+    }
+    return true; 
+}
+
+static bool TransformPrimitiveArrayToBlob(const vector<RosValue::Pointer>& value_list, Vector& result) {
+    auto data = FlatVector::GetData<string_t>(result);
+	auto &validity = FlatVector::Validity(result);
+    validity.SetAllValid(value_list.size());
+
+    // Potentially catch exceptions here and set validity
+	for (size_t i = 0; i < value_list.size(); i++) {
+        string_t blob(reinterpret_cast<const char*>(value_list[i]->getPrimitiveArrayRosValueBuffer()), 
+                      value_list[i]->getPrimitiveArrayRosValueBufferSize()); 
+        data[i] = StringVector::AddStringOrBlob(result, blob); 
+	}
+	return true;
+}
+
 
 using EmbeddedValueMapType = unordered_map<std::string, vector<RosValue::Pointer> >; 
 using ObjectIndexType = pair<string, size_t>;
