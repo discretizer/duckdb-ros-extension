@@ -11,7 +11,7 @@
 #include "ros_scanner.hpp"
 #include "ros_bag_reader.hpp"
 
-#include <optional> 
+#include <boost/optional.hpp> 
 
 namespace duckdb {
 
@@ -113,8 +113,8 @@ public:
 	/// Populate the next local state from the 
 	bool GetNext(ClientContext &context, const RosBindData &bind_data, RosLocalState& local_state) 
 	{
-		unique_lock global_lock(lock); 
-		std::optional<bool> status; 
+		unique_lock<std::mutex> global_lock(lock); 
+		boost::optional<bool> status; 
 		do {
 			if (error_opening_file) {
 				status = false; 
@@ -243,7 +243,7 @@ public:
 	atomic<idx_t> file_index;
 
 	//! Current chunk index location to read 
-	std::optional<RosBagReader::ChunkSet::const_iterator> chunk_index;  
+	boost::optional<RosBagReader::ChunkSet::const_iterator> chunk_index;  
 
 	//! Current column_ids (past in from input on creation)
 	//! Used in MultiFileReader::InitializeReader

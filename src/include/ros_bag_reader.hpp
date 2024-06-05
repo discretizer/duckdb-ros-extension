@@ -21,7 +21,7 @@
 #include "ros_reader_options.hpp"
 #include "resizable_buffer.hpp"
 
-#include <optional>
+#include <boost/optional.hpp>
 
 namespace duckdb{
 
@@ -86,7 +86,7 @@ public:
 	    static unique_ptr<ScanState> Deserialize(Deserializer &deserializer);
     };
 
-    void InitializeScan(RosBagReader::ScanState& scan, std::optional<ChunkSet::const_iterator>& current_chunk); 
+    void InitializeScan(RosBagReader::ScanState& scan, boost::optional<ChunkSet::const_iterator>& current_chunk); 
     void Scan(ScanState& scan, DataChunk& result);
 private: 
     struct TopicIndex {

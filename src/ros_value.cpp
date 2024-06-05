@@ -31,7 +31,7 @@ const RosValue::Pointer RosValue::at(const std::string &key) const {
 
 RosValue::Type RosValue::getElementType() const {
   if (type_ == Type::primitive_array) {
-    return std::get<primitive_array_info_t>(info_).element_type;
+    return boost::variant2::get<primitive_array_info_t>(info_).element_type;
   } else if (type_ == Type::array) {
     return at(0)->getType();
   } else {
@@ -52,7 +52,7 @@ size_t RosValue::getPrimitiveArrayRosValueBufferSize() const {
     throw std::runtime_error("Cannot access the buffer of a non primitive_array RosValue");
   }
 
-  return std::get<primitive_array_info_t>(info_).length * primitiveTypeToSize(getElementType());
+  return boost::variant2::get<primitive_array_info_t>(info_).length * primitiveTypeToSize(getElementType());
 }
 
 template<typename T>
@@ -65,7 +65,7 @@ const RosValue::Pointer RosValue::get(const std::string &key) const {
     throw std::runtime_error("Value is not an object");
   }
 
-  return at(std::get<object_info_t>(info_).field_indexes->at(key));
+  return at(boost::variant2::get<object_info_t>(info_).field_indexes->at(key));
 }
 
 template<>
@@ -81,11 +81,11 @@ const std::string RosValue::as<std::string>() const {
 
 const RosValue::Pointer RosValue::at(const size_t idx) const {
   if (type_ == Type::object) {
-    return std::get<object_info_t>(info_).children.at(idx);
+    return boost::variant2::get<object_info_t>(info_).children.at(idx);
   } else if (type_ == Type::array) {
-    return std::get<array_info_t>(info_).children.at(idx);
+    return boost::variant2::get<array_info_t>(info_).children.at(idx);
   } else if (type_ == Type::primitive_array) {
-    auto array_info = std::get<primitive_array_info_t>(info_); 
+    auto array_info = boost::variant2::get<primitive_array_info_t>(info_); 
     return RosValue::Pointer(
       array_info.element_type,
       array_info.message_buffer.substr(idx * primitiveTypeToSize(array_info.element_type))
@@ -101,8 +101,8 @@ std::unordered_map<std::string, RosValue::Pointer> RosValue::getObjects() const 
   }
 
   std::unordered_map<std::string, RosValue::Pointer> objects;
-  objects.reserve(std::get<object_info_t>(info_).children.length);
-  for (const auto& field : *std::get<object_info_t>(info_).field_indexes) {
+  objects.reserve(boost::variant2::get<object_info_t>(info_).children.length);
+  for (const auto& field : *boost::variant2::get<object_info_t>(info_).field_indexes) {
     objects.emplace(field.first, at(field.second));
   }
   return objects;
@@ -112,7 +112,7 @@ const std::unordered_map<std::string, size_t>& RosValue::getObjectIndices() cons
   if (type_ != Type::object) {
     throw std::runtime_error("Cannot getObjects of a non-object RosValue");
   }
-  return *std::get<object_info_t>(info_).field_indexes;
+  return *boost::variant2::get<object_info_t>(info_).field_indexes;
 }
 
 vector<RosValue::Pointer> RosValue::getValues() const {
@@ -179,15 +179,15 @@ string RosValue::toString(const string &path) const {
     }
     case Type::object: {
       std::ostringstream output;
-      for (const auto& field : *std::get<object_info_t>(info_).field_indexes) {
+      for (const auto& field : *boost::variant2::get<object_info_t>(info_).field_indexes) {
         if (path.empty()) {
-          output << std::get<object_info_t>(info_).children.at(field.second)->toString(field.first);
+          output << boost::variant2::get<object_info_t>(info_).children.at(field.second)->toString(field.first);
         } else {
-          output << std::get<object_info_t>(info_).children.at(field.second)->toString(path + "." + field.first);
+          output << boost::variant2::get<object_info_t>(info_).children.at(field.second)->toString(path + "." + field.first);
         }
 
         // No need for a newline if our child is an object or array
-        const auto &object_type = std::get<object_info_t>(info_).children.at(field.second)->getType();
+        const auto &object_type = boost::variant2::get<object_info_t>(info_).children.at(field.second)->getType();
         if (!(object_type == Type::object || object_type == Type::array)) {
           output << std::endl;
         }
@@ -196,9 +196,9 @@ string RosValue::toString(const string &path) const {
     }
     case Type::array: {
       std::ostringstream output;
-      for (size_t i = 0; i < std::get<array_info_t>(info_).children.length; ++i) {
+      for (size_t i = 0; i < boost::variant2::get<array_info_t>(info_).children.length; ++i) {
         const std::string array_path = path + "[" + std::to_string(i) + "]";
-        output << std::get<array_info_t>(info_).children.at(i)->toString(array_path) << std::endl;
+        output << boost::variant2::get<array_info_t>(info_).children.at(i)->toString(array_path) << std::endl;
       }
       return output.str();
     }
@@ -297,7 +297,7 @@ const std::string& RosValue::const_iterator<const std::string&, std::unordered_m
 
 template<>
 const std::pair<const std::string&, const RosValue::Pointer> RosValue::const_iterator<const std::pair<const std::string&, const RosValue::Pointer>, std::unordered_map<std::string, size_t>::const_iterator>::operator*() const {
-  return std::make_pair(index_->first, std::get<object_info_t>(value_.info_).children.at(index_->second));
+  return std::make_pair(index_->first, boost::variant2::get<object_info_t>(value_.info_).children.at(index_->second));
 }
 
 }

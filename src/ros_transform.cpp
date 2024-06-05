@@ -48,7 +48,7 @@ LogicalType RosTransform::ConvertRosFieldType(const RosMsgTypes::FieldDef& def) 
         children.reserve(members.size()); 
         for (auto i = members.cbegin(); i != members.cend(); i++) {
             if (i->index() == 0) {
-                auto field = std::get<RosMsgTypes::FieldDef>(*i); 
+                auto field = boost::variant2::get<RosMsgTypes::FieldDef>(*i); 
                 children.emplace_back(std::make_pair(field.name(), ConvertRosFieldType(field))); 
             }
         }
@@ -418,12 +418,12 @@ bool RosTransform::TransformTypeToSchema(const RosMsgTypes::MsgDef& msg_def, Ros
         auto header_mem = msg_def.members().at(header_idx); 
 
         if ( header_mem.index() == 0) {
-            auto header = std::get<RosMsgTypes::FieldDef>(header_mem); 
+            auto header = boost::variant2::get<RosMsgTypes::FieldDef>(header_mem); 
             if (header.type() ==  RosValue::Type::object) {
                 can_split_header = true; 
                 for (auto member : header.typeDefinition().members()) {
                     if (member.index() == 0) {
-                        auto field = std::get<RosMsgTypes::FieldDef>(member); 
+                        auto field = boost::variant2::get<RosMsgTypes::FieldDef>(member); 
                         names.push_back("header." + field.name()); 
                         types.push_back(RosTransform::ConvertRosFieldType(field)); 
                     }
@@ -434,7 +434,7 @@ bool RosTransform::TransformTypeToSchema(const RosMsgTypes::MsgDef& msg_def, Ros
     // Convert each ros message field into schema 
     for (auto member : msg_def.members()) {
         if (member.index() == 0) { 
-            auto field = std::get<RosMsgTypes::FieldDef>(member); 
+            auto field = boost::variant2::get<RosMsgTypes::FieldDef>(member); 
             // Ignore header field if we've already split it. 
             if (!(can_split_header && field.name() == "header")) {
                  names.push_back(field.name()); 

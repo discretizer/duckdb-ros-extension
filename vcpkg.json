@@ -3,6 +3,8 @@
     "openssl", 
     "boost-spirit", 
     "boost-fusion", 
+    "boost-variant2", 
+    "boost-utility",
     "bzip2", 
     "lz4"
   ]

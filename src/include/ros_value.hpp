@@ -2,7 +2,9 @@
 
 #include <cstdint>
 #include <cstring>
-#include <variant>
+
+#include <boost/variant2/variant.hpp>
+#include <boost/utility/string_view.hpp>
 
 #include <duckdb.hpp>
 
@@ -193,7 +195,7 @@ class RosValue {
       throw std::runtime_error("Cannot iterate over the items of a RosValue that is not an object");
     }
 
-    return RosValue::const_iterator<IteratorReturnType, std::unordered_map<std::string, size_t>::const_iterator>(*this, std::get<object_info_t>(info_).field_indexes->cbegin());
+    return RosValue::const_iterator<IteratorReturnType, std::unordered_map<std::string, size_t>::const_iterator>(*this, boost::variant2::get<object_info_t>(info_).field_indexes->cbegin());
   }
   template<class IteratorReturnType>
   const_iterator<IteratorReturnType, std::unordered_map<std::string, size_t>::const_iterator> endItems() const {
@@ -201,15 +203,15 @@ class RosValue {
       throw std::runtime_error("Cannot iterate over the items of a RosValue that is not an object");
     }
 
-    return RosValue::const_iterator<IteratorReturnType, std::unordered_map<std::string, size_t>::const_iterator>(*this, std::get<object_info_t>(info_).field_indexes->cend());
+    return RosValue::const_iterator<IteratorReturnType, std::unordered_map<std::string, size_t>::const_iterator>(*this, boost::variant2::get<object_info_t>(info_).field_indexes->cend());
   }
 
  private:
   struct _array_identifier {};
  public:
-  RosValue(const Type type, std::string_view message_buffer)
+  RosValue(const Type type, boost::string_view message_buffer)
     : type_(type)
-    , info_(std::in_place_type<primitive_info_t>, message_buffer )
+    , info_(boost::variant2::in_place_type_t<primitive_info_t>(), message_buffer )
   {
     if (type_ == Type::object || type_ == Type::array || type_ == Type::primitive_array) {
       throw std::runtime_error("Cannot create an object or array with this constructor");
@@ -217,7 +219,7 @@ class RosValue {
   }
   RosValue(const Type type)
     : type_(type)
-    , info_(std::in_place_type<primitive_info_t>, std::string_view())
+    , info_(boost::variant2::in_place_type_t<primitive_info_t>(), boost::string_view())
   {
     if (type_ == Type::object || type_ == Type::array || type_ == Type::primitive_array) {
       throw std::runtime_error("Cannot create an object or array with this constructor");
@@ -225,17 +227,17 @@ class RosValue {
   }
   RosValue(const shared_ptr<unordered_map<string, size_t>>& field_indexes)
     : type_(Type::object)
-    , info_(std::in_place_type<object_info_t>, field_indexes)
+    , info_(boost::variant2::in_place_type_t<object_info_t>(), field_indexes)
   {
   }
   RosValue(const _array_identifier &i)
     : type_(Type::array)
-    , info_(std::in_place_type<array_info_t>)
+    , info_(boost::variant2::in_place_type_t<array_info_t>())
   {
   }
   RosValue(const Type element_type, size_t length)
     : type_(Type::primitive_array)
-    , info_(std::in_place_type<primitive_array_info_t>, element_type, length, std::string_view())
+    , info_(boost::variant2::in_place_type_t<primitive_array_info_t>(), element_type, length, boost::string_view())
   {
   }
 
@@ -265,14 +267,14 @@ class RosValue {
       throw std::runtime_error("Value is not an object");
     }
 
-    return std::get<object_info_t>(info_).field_indexes->count(key);
+    return boost::variant2::get<object_info_t>(info_).field_indexes->count(key);
   }
 
   size_t size() const {
     if (type_ == Type::array || type_ == Type::object) {
       return getChildren().length;
     } else if (type_ == Type::primitive_array) {
-      return static_cast<size_t>(std::get<primitive_array_info_t>(info_).length);
+      return static_cast<size_t>(boost::variant2::get<primitive_array_info_t>(info_).length);
     } else {
       throw std::runtime_error("Value is not an array or an object");
     }
@@ -297,14 +299,14 @@ class RosValue {
 
  private:
   struct primitive_info_t {
-    primitive_info_t(std::string_view buf)
+    primitive_info_t(boost::string_view buf)
       : message_buffer(buf)
     {}
-    std::string_view message_buffer;
+    boost::string_view message_buffer;
   };
 
   struct primitive_array_info_t {
-    primitive_array_info_t(const Type element_type, int32_t length, std::string_view message_buffer)
+    primitive_array_info_t(const Type element_type, int32_t length, boost::string_view message_buffer)
       : element_type(element_type)
       , length(length)
       , message_buffer(message_buffer)
@@ -313,7 +315,7 @@ class RosValue {
 
     Type element_type;
     int32_t length;
-    std::string_view message_buffer;
+    boost::string_view message_buffer;
   };
 
   struct array_info_t {
@@ -329,20 +331,20 @@ class RosValue {
   };
 
   Type type_;
-  std::variant<primitive_info_t, primitive_array_info_t, array_info_t, object_info_t> info_; 
+  boost::variant2::variant<primitive_info_t, primitive_array_info_t, array_info_t, object_info_t> info_; 
   
   template<typename T>
   typename std::enable_if<(std::alignment_of<T>::value > 1), T>::type
   getPrimitive() const {
     T value; 
-    std::get<primitive_info_t>(info_).message_buffer.copy(reinterpret_cast<char*>(&value), sizeof(T)); 
+    boost::variant2::get<primitive_info_t>(info_).message_buffer.copy(reinterpret_cast<char*>(&value), sizeof(T)); 
     return value; 
   }
 
   template<typename T>
   typename std::enable_if<(std::alignment_of<T>::value == 1), const T&>::type
   getPrimitive() const {
-    const char* value_ptr = std::get<primitive_info_t>(info_).message_buffer.data();
+    const char* value_ptr = boost::variant2::get<primitive_info_t>(info_).message_buffer.data();
     return *reinterpret_cast<const T*>(value_ptr); 
   }
 
@@ -350,9 +352,9 @@ class RosValue {
   const ros_value_list_t& getChildren() const {
     switch(type_) {
       case Type::object:
-        return std::get<object_info_t>(info_).children;
+        return boost::variant2::get<object_info_t>(info_).children;
       case Type::array:
-        return std::get<array_info_t>(info_).children;
+        return boost::variant2::get<array_info_t>(info_).children;
       default:
         throw std::runtime_error("Cannot getChildren of a RosValue that is not an object or array");
     }
@@ -367,7 +369,7 @@ class RosValue::Pointer {
     shared_ptr<vector<RosValue>> base;
     size_t index;
   };
-  std::variant<RosValue, vector_based_value_info_t> info_;
+  boost::variant2::variant<RosValue, vector_based_value_info_t> info_;
 
  public:
   Pointer()
@@ -390,7 +392,7 @@ class RosValue::Pointer {
   {
   }
 
-  Pointer(const RosValue::Type type, std::string_view message_buffer)
+  Pointer(const RosValue::Type type, boost::string_view message_buffer)
     : info_(RosValue(type, message_buffer))
   {
   }
@@ -414,9 +416,9 @@ class RosValue::Pointer {
  private:
   const RosValue& operator*() const {
     if (info_.index() == 0) {
-      return std::get<RosValue>(info_);
+      return boost::variant2::get<RosValue>(info_);
     } else {
-      vector_based_value_info_t info = std::get<vector_based_value_info_t>(info_);
+      vector_based_value_info_t info = boost::variant2::get<vector_based_value_info_t>(info_);
       return info.base->at(info.index);
     }
   }

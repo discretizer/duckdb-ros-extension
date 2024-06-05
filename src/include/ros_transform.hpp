@@ -5,8 +5,6 @@
 
 #include <duckdb.hpp>
 
-#include <string_view>
-
 namespace duckdb {
 struct RosTransform {
     

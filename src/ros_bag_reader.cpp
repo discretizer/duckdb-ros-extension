@@ -7,14 +7,12 @@
 
 #include "duckdb/common/shared_ptr.hpp"
 
-#include <string_view>
+#include <boost/utility/string_view.hpp>
 #include <array>
 
 namespace duckdb {
 
-using namespace std::literals::string_view_literals;
-
-constexpr auto ROSBAG_MAGIC_STRING = "#ROSBAG V"sv; 
+ 
 
 const RosMsgTypes::primitive_type_map_t RosMsgTypes::FieldDef::primitive_type_map = {
     {"bool", RosValue::Type::ros_bool},
@@ -43,16 +41,19 @@ const RosMsgTypes::primitive_type_map_t RosMsgTypes::FieldDef::primitive_type_ma
 /// @return 
 static shared_ptr<RosBagMetadataCache>
 LoadMetadata(Allocator &allocator, FileHandle &file_handle) {
+    constexpr char ROSBAG_MAGIC_SRING_ARRAY[] = "#ROSBAG V";
+    const boost::string_view ROSBAG_MAGIC_STRING(ROSBAG_MAGIC_SRING_ARRAY, sizeof(ROSBAG_MAGIC_SRING_ARRAY) - 1); 
+    
     auto current_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     auto metadata = make_uniq<RosBagMetadata>();
 
-    std::array<char, ROSBAG_MAGIC_STRING.size()> temp; 
+    std::array<char, sizeof(ROSBAG_MAGIC_SRING_ARRAY) - 1> temp; 
 
     // First, check for the magic string indicating this is indeed a bag file
 
     file_handle.Read(temp.data(), ROSBAG_MAGIC_STRING.size());
 
-    if (std::string_view(temp.data(), ROSBAG_MAGIC_STRING.size() ) != ROSBAG_MAGIC_STRING) {
+    if (boost::string_view(temp.data(), ROSBAG_MAGIC_STRING.size() ) != ROSBAG_MAGIC_STRING) {
         throw std::runtime_error("This file doesn't appear to be a bag file...");
     }
 
@@ -60,13 +61,13 @@ LoadMetadata(Allocator &allocator, FileHandle &file_handle) {
     file_handle.Read(temp.data(), 3);
 
     // Only version 2.0 is supported at the moment
-    if (std::string_view(temp.data(), 3) != "2.0") {
+    if (boost::string_view(temp.data(), 3) != "2.0") {
         throw std::runtime_error("Unsupported bag file version: " + std::string(temp.data(), 3) );
     }
 
     // The version is followed by a newline
     file_handle.Read(temp.data(), 1);
-    if (std::string_view(temp.data(), 1) != "\n") {
+    if (boost::string_view(temp.data(), 1) != "\n") {
         throw std::runtime_error("Unable to find newline after version string, perhaps this bag file is corrupted?");
     }
 
@@ -83,9 +84,9 @@ LoadMetadata(Allocator &allocator, FileHandle &file_handle) {
     record_parser.Read(file_handle, true);
 
     readFields(record_parser.Header(), 
-        field("conn_count", connection_count), 
-        field("chunk_count", chunk_count ), 
-        field("index_pos", index_pos)
+        field<uint32_t>("conn_count", connection_count), 
+        field<uint32_t>("chunk_count", chunk_count ), 
+        field<uint64_t>("index_pos", index_pos)
     ); 
     
     metadata->connections.resize(connection_count); 
@@ -103,8 +104,8 @@ LoadMetadata(Allocator &allocator, FileHandle &file_handle) {
         std::string topic; 
 
         readFields(record_parser.Header(), 
-            field("conn", connection_id), 
-            field("topic", topic)
+            field<uint32_t>("conn", connection_id), 
+            field<string>("topic", topic)
         ); 
         if (topic.empty()) {
             continue;
@@ -114,11 +115,11 @@ LoadMetadata(Allocator &allocator, FileHandle &file_handle) {
 
         std::string latching_str = ""; 
         readFields(record_parser.Data(), 
-            field("type", connection_data.type), 
-            field("md5sum", connection_data.md5sum), 
-            field("message_definition", connection_data.message_definition), 
-            field("callerid", connection_data.callerid ), 
-            field("latching", latching_str)
+            field<string>("type", connection_data.type), 
+            field<string>("md5sum", connection_data.md5sum), 
+            field<string>("message_definition", connection_data.message_definition), 
+            field<string>("callerid", connection_data.callerid ), 
+            field<string>("latching", latching_str)
         ); 
         connection_data.latching = (latching_str == "1"); 
         const size_t slash_pos = connection_data.type.find_first_of('/');
@@ -140,11 +141,11 @@ LoadMetadata(Allocator &allocator, FileHandle &file_handle) {
 
         uint32_t ver;
         readFields(record_parser.Header(), 
-            field("ver", ver), 
-            field("chunk_pos", chunk_info.chunk_pos), 
-            field("start_time", chunk_info.start_time), 
-            field("end_time", chunk_info.end_time),
-            field("count", chunk_info.connection_count) 
+            field<uint32_t>("ver", ver), 
+            field<uint64_t>("chunk_pos", chunk_info.chunk_pos), 
+            field<RosValue::ros_time_t>("start_time", chunk_info.start_time), 
+            field<RosValue::ros_time_t>("end_time", chunk_info.end_time),
+            field<uint32_t>("count", chunk_info.connection_count) 
         ); 
         metadata->chunk_infos[i] = chunk_info;
     }
@@ -164,8 +165,8 @@ LoadMetadata(Allocator &allocator, FileHandle &file_handle) {
         record_parser.Read(file_handle, true); 
         
         readFields(record_parser.Header(), 
-            field("compression", chunk.compression), 
-            field("size", chunk.uncompressed_size)
+            field<string>("compression", chunk.compression), 
+            field<uint32_t>("size", chunk.uncompressed_size)
         );  
         chunk.header_len = record_parser.GetHeaderLength(); 
         chunk.data_len = record_parser.GetDataLength(); 
@@ -187,9 +188,9 @@ LoadMetadata(Allocator &allocator, FileHandle &file_handle) {
             uint32_t msg_count;
       
             readFields(  record_parser.Header(), 
-                field("ver", version), 
-                field("conn", connection_id), 
-                field("count", msg_count)
+                field<uint32_t>("ver", version), 
+                field<uint32_t>("conn", connection_id), 
+                field<uint32_t>("count", msg_count)
             ); 
 
             metadata->connections[connection_id].blocks.emplace_back(i, msg_count); 
@@ -346,9 +347,9 @@ void RosBagReader::Scan(RosBagReader::ScanState& scan_state, DataChunk& result) 
         RosValue::ros_time_t timestamp; 
 
         readFields( record.Header(),
-            field("op", op), 
-            field("conn", conn_id),
-            field("time", timestamp) 
+            field<uint8_t>("op", op), 
+            field<uint32_t>("conn", conn_id),
+            field<RosValue::ros_time_t>("time", timestamp) 
         );
 
         switch (RosBagTypes::op(op)) {
@@ -376,7 +377,7 @@ void RosBagReader::Scan(RosBagReader::ScanState& scan_state, DataChunk& result) 
     result.SetCardinality(MinValue(message_values.size(), size_t(STANDARD_VECTOR_SIZE))); 
 }
 
-void RosBagReader::InitializeScan(RosBagReader::ScanState& scan, std::optional<RosBagReader::ChunkSet::const_iterator>& current_chunk) {
+void RosBagReader::InitializeScan(RosBagReader::ScanState& scan, boost::optional<RosBagReader::ChunkSet::const_iterator>& current_chunk) {
     scan.expected_message_count = 0;  
     if (!current_chunk.has_value()) {
         current_chunk = GetTopicChunkSet().begin(); 

@@ -21,19 +21,19 @@ void MessageParser::initObject(size_t object_offset, const RosMsgTypes::BaseMsgD
 
   for (auto &member: object_definition.members()) {
     if (member.index() == 0) {
-      auto& field = std::get<RosMsgTypes::FieldDef>(member);
+      auto& field = boost::variant2::get<RosMsgTypes::FieldDef>(member);
       emplaceField(field);
     }
   }
 
-  auto& children = std::get<RosValue::object_info_t>(ros_values->at(object_offset).info_).children; 
+  auto& children = boost::variant2::get<RosValue::object_info_t>(ros_values->at(object_offset).info_).children; 
   children.base = ros_values;
   children.offset = children_offset;
   children.length = 0;
 
   for (auto &member: object_definition.members()) {
     if (member.index() == 0) {
-      auto& field = std::get<RosMsgTypes::FieldDef>(member);
+      auto& field = boost::variant2::get<RosMsgTypes::FieldDef>(member);
       const size_t child_offset = children_offset + children.length++;
       switch (ros_values->at(child_offset).type_) {
         case RosValue::Type::object: {
@@ -87,7 +87,7 @@ void MessageParser::initArray(size_t array_offset, const RosMsgTypes::FieldDef &
     const size_t children_offset = ros_values_offset;
     ros_values_offset += array_length;
 
-    auto& info = std::get<RosValue::array_info_t>(ros_values->at(array_offset).info_);
+    auto& info = boost::variant2::get<RosValue::array_info_t>(ros_values->at(array_offset).info_);
     auto& children = info.children; 
 
     children.length = array_length;
@@ -113,7 +113,7 @@ void MessageParser::initArray(size_t array_offset, const RosMsgTypes::FieldDef &
       }
     }
   } else {
-    auto& info = std::get<RosValue::primitive_array_info_t>(ros_values->at(array_offset).info_);
+    auto& info = boost::variant2::get<RosValue::primitive_array_info_t>(ros_values->at(array_offset).info_);
     info.length = array_length;
     info.message_buffer = message_buffer;
     message_buffer = message_buffer.substr(array_length * field.typeSize());
@@ -122,7 +122,7 @@ void MessageParser::initArray(size_t array_offset, const RosMsgTypes::FieldDef &
 
 void MessageParser::initPrimitive(size_t primitive_offset, const RosMsgTypes::FieldDef &field) {
   RosValue& primitive = ros_values->at(primitive_offset);
-  auto& info = std::get<RosValue::primitive_info_t>(primitive.info_); 
+  auto& info = boost::variant2::get<RosValue::primitive_info_t>(primitive.info_); 
 
   info.message_buffer = message_buffer;
   if (field.type() == RosValue::Type::string) {

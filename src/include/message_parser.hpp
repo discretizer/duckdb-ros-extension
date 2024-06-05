@@ -15,7 +15,7 @@ namespace duckdb {
 class MessageParser {
  public:
   MessageParser(
-    std::string_view buffer,
+    boost::string_view buffer,
     const RosMsgTypes::MsgDef& msg_def
   ):  message_buffer(buffer),
       ros_values(make_shared_ptr<vector<RosValue>>()), 
@@ -34,7 +34,7 @@ class MessageParser {
   void initPrimitive(size_t primitive_offset, const RosMsgTypes::FieldDef &field);
   void emplaceField(const RosMsgTypes::FieldDef &field);
 
-  std::string_view message_buffer; 
+  boost::string_view message_buffer; 
  
   shared_ptr<vector<RosValue> > ros_values;
   size_t ros_values_offset;

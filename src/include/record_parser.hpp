@@ -9,7 +9,7 @@
 
 #include "ros_bag_types.hpp"
 
-#include <string_view> 
+#include <boost/utility/string_view.hpp> 
 
 namespace duckdb {
 
@@ -47,12 +47,12 @@ public:
         }
     }
 
-    std::string_view Header() const {
-        return std::string_view(reinterpret_cast<const char *>(header.get()), static_cast<size_t>(header_len)); 
+    boost::string_view Header() const {
+        return boost::string_view(reinterpret_cast<const char *>(header.get()), static_cast<size_t>(header_len)); 
     }
 
-    std::string_view Data() const {
-        return std::string_view(reinterpret_cast<const char *>(data.get()), static_cast<size_t>(data_len)); 
+    boost::string_view Data() const {
+        return boost::string_view(reinterpret_cast<const char *>(data.get()), static_cast<size_t>(data_len)); 
     }
 
     uint32_t GetHeaderLength() {return header_len; }
@@ -80,12 +80,12 @@ public:
         data.inc(data_len); 
     }
 
-    std::string_view Header() const {
-        return std::string_view(reinterpret_cast<const char *>(header_ptr), static_cast<size_t>(header_len)); 
+    boost::string_view Header() const {
+        return boost::string_view(reinterpret_cast<const char *>(header_ptr), static_cast<size_t>(header_len)); 
     }
 
-    std::string_view Data() const {
-        return std::string_view(reinterpret_cast<const char *>(data_ptr), static_cast<size_t>(data_len)); 
+    boost::string_view Data() const {
+        return boost::string_view(reinterpret_cast<const char *>(data_ptr), static_cast<size_t>(data_len)); 
     }
 private: 
     data_ptr_t header_ptr;
@@ -96,7 +96,7 @@ private:
 
 
 template <typename T> 
-void readField(const std::string_view& data, T& value) {
+void readField(const boost::string_view& data, T& value) {
     // So there are several subtle issues with just casting the pointer here; 
     // Pointer alignment and other issues prevent just raw (i.e. reinterpret_cast )
     // casting.  Best just to memcpy.
@@ -104,11 +104,11 @@ void readField(const std::string_view& data, T& value) {
     std::memcpy(&value, data.begin(), data.size());
 } 
 
-void readField(const std::string_view& data, std::string& value) {
-    value = data;
+void readField(const boost::string_view& data, std::string& value) {
+    value = data.to_string();
 } 
 
-void readField(const std::string_view& data, RosValue::ros_time_t& time) {
+void readField(const boost::string_view& data, RosValue::ros_time_t& time) {
     struct timeval_t {
         uint32_t sec;
         uint32_t nsec; 
@@ -121,30 +121,43 @@ void readField(const std::string_view& data, RosValue::ros_time_t& time) {
 template <typename T> 
 struct field {
 public: 
-    field(std::string_view name, T& value): 
+    field(boost::string_view name, T& value): 
         field_name(name), field_ref(value) {
     }
-    void apply(const std::string_view& name, const std::string_view& data ) {
+    void apply(const boost::string_view& name, const boost::string_view& data ) {
         if (name == field_name) {
             readField(data, field_ref);
         }
     }
 
-    std::string_view field_name;
+    boost::string_view field_name;
     T& field_ref; 
 };
 
+
+void apply_all(const boost::string_view& name, const boost::string_view& data) 
+{ 
+// intentionally blank
+}
+
+template<class Field, class ... Fargs>
+void apply_all(const boost::string_view& name, const boost::string_view& data, Field field, Fargs... fields ) {
+    field.apply(name, data); 
+    apply_all(name, data, fields...); 
+}
+
+
 template <class ... args>
-void readFields(const std::string_view& data, field<args>&&... fields) {  
+void readFields(const boost::string_view& data, field<args>&&... fields) {  
   auto current = data.begin(); 
 
   while (current < data.end()) {
     uint32_t field_len = 0;  
-    readField(std::string_view(current, sizeof(field_len)), field_len); 
+    readField(boost::string_view(current, sizeof(field_len)), field_len); 
     
     current += sizeof(uint32_t);
 
-    std::string_view buffer(current, field_len); 
+    boost::string_view buffer(current, field_len); 
     const auto sep = buffer.find('=');
 
     if (sep == string::npos) {
@@ -155,7 +168,7 @@ void readFields(const std::string_view& data, field<args>&&... fields) {
     const auto data = buffer.substr(sep + 1); 
     // This fun bit of code iterates through the field definitions 
     // and parses out the field of the field name matches. 
-    (fields.apply(name, data), ...); 
+    apply_all(name, data, fields...); 
 
     current += field_len;
   }
