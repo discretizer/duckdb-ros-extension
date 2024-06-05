@@ -69,12 +69,12 @@ public:
 		resize(allocator, new_size);
 	}
 	void resize(Allocator &allocator, uint64_t new_size) {
+		len = new_size;
 		if (new_size > allocated_data.GetSize()) {
 			idx_t alloc_len = NextPowerOfTwo(new_size);
 			allocated_data = allocator.Allocate(alloc_len);
 		}
 		ptr = allocated_data.get();
-		len = allocated_data.GetSize(); 
 	}
 
 private:

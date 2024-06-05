@@ -340,10 +340,10 @@ void RosBagReader::Scan(RosBagReader::ScanState& scan_state, DataChunk& result) 
     while (scan_state.current_buffer->len != 0) {
     
         RosBufferedRecordParser record(*(scan_state.current_buffer)); 
+        
         uint8_t op; 
         uint32_t conn_id; 
         RosValue::ros_time_t timestamp; 
-        scan_state.current_buffer->inc(scan_state.current_buffer->len);
 
         readFields( record.Header(),
             field("op", op), 
