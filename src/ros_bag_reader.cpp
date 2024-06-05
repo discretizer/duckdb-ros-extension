@@ -337,27 +337,22 @@ void RosBagReader::Scan(RosBagReader::ScanState& scan_state, DataChunk& result) 
     // could be to generate a message index for each topic. 
     // For now see the performace we get by just looping quickly through all 
     // the messages; 
+    while (scan_state.current_buffer->len != 0) {
     
-    bool once = true; 
-    //while (scan_state.current_buffer->len != 0) {
-    while (once) {
-   
-        //RosBufferedRecordParser record(*(scan_state.current_buffer)); 
-        uint8_t op = 7; 
+        RosBufferedRecordParser record(*(scan_state.current_buffer)); 
+        uint8_t op; 
         uint32_t conn_id; 
         RosValue::ros_time_t timestamp; 
-        once = false; 
         scan_state.current_buffer->inc(scan_state.current_buffer->len);
-        /*
+
         readFields( record.Header(),
             field("op", op), 
             field("conn", conn_id),
             field("time", timestamp) 
         );
-        */
+
         switch (RosBagTypes::op(op)) {
             case RosBagTypes::op::MESSAGE_DATA: {
-                /*
                 if (topic_index->connection_ids.count(conn_id) == 0) {
                     continue;
                 }
@@ -365,7 +360,6 @@ void RosBagReader::Scan(RosBagReader::ScanState& scan_state, DataChunk& result) 
 
                 message_values.emplace_back(parser.parse()); 
                 message_rx_time.emplace_back(timestamp); 
-                */
     
                 continue;
             }
@@ -378,8 +372,8 @@ void RosBagReader::Scan(RosBagReader::ScanState& scan_state, DataChunk& result) 
         }
     }
 
-    //RosTransform::TransformMessages(options, message_values, message_rx_time, names, result.data); 
-    //result.SetCardinality(MinValue(message_values.size(), size_t(STANDARD_VECTOR_SIZE))); 
+    RosTransform::TransformMessages(options, message_values, message_rx_time, names, result.data); 
+    result.SetCardinality(MinValue(message_values.size(), size_t(STANDARD_VECTOR_SIZE))); 
 }
 
 void RosBagReader::InitializeScan(RosBagReader::ScanState& scan, std::optional<RosBagReader::ChunkSet::const_iterator>& current_chunk) {

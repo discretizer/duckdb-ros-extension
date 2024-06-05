@@ -105,8 +105,7 @@ public:
 	/// @brief Maximum threads for the current reader
 	/// @return Maximum threads. 
 	idx_t MaxThreads() const override {
-		//return max_threads;
-		return 1;  
+		return max_threads;
 	}
 
 	/// Populate the next local state from the 
