@@ -1,0 +1,19 @@
+# name: test/sql/ros.test
+# description: test ros extension
+# group: [ros]
+
+# Before we load the extension, this will fail
+statement error
+SELECT * FROM rosbag_info('../data/test.bag');
+----
+Catalog Error: Table Function with name rosbag_info does not exist!
+
+# Require statement will ensure this test is run with this extension loaded
+require ros
+
+# Confirm rosbag_info and the extension works
+query I
+SELECT count(*) FROM rosbag_info('__WORKING_DIRECTORY__/test/data/test.bag');
+----
+1
+
