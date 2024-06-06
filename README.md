@@ -1,4 +1,4 @@
-# Duck DB ROS PLugin
+# Duck DB ROS Plugin
 
 This plugin alows you to read an import individual topics in ROS 1.0 bags into DuckDb as tables for analysis and export into other formats that DuckDb write (i.e. parquet). 
 
