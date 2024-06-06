@@ -1,7 +1,16 @@
 cmake_minimum_required(VERSION 3.5)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Set extension name here
 set(TARGET_NAME ros)
+set(EXTENSION_NAME ${TARGET_NAME}_extension)
+set(CMAKE_CXX_STANDARD 11) 
+
+project(${TARGET_NAME})
+
+add_definitions(-DDUCKDB_MAJOR_VERSION=${DUCKDB_MAJOR_VERSION})
+add_definitions(-DDUCKDB_MINOR_VERSION=${DUCKDB_MINOR_VERSION})
+add_definitions(-DDUCKDB_PATCH_VERSION=${DUCKDB_PATCH_VERSION})
 
 # DuckDB's extension distribution supports vcpkg. As such, dependencies can be added in ./vcpkg.json and then
 # used in cmake with find_package. Feel free to remove or replace with other dependencies.
@@ -9,14 +18,17 @@ set(TARGET_NAME ros)
 find_package(OpenSSL REQUIRED)
 
 set(Boost_USE_STATIC_LIBS ON)
+if (EMSCRIPTEN)
+  set(Boost_USE_STATIC_LIBS OFF)
+endif()
+
+
 find_package(Boost)
 find_package(lz4)
 find_package(BZip2)
 
-set(EXTENSION_NAME ${TARGET_NAME}_extension)
 set(LOADABLE_EXTENSION_NAME ${TARGET_NAME}_loadable_extension)
 
-project(${TARGET_NAME})
 include_directories(src/include)
 
 set(EXTENSION_SOURCES 
