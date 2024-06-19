@@ -18,6 +18,7 @@ jobs:
     with:
       duckdb_version: v1.0.0
       extension_name: ros
+      vcpkg_commit: 01f602195983451bc83e72f4214af2cbc495aa94
 
   duckdb-stable-deploy:
     name: Deploy extension binaries
