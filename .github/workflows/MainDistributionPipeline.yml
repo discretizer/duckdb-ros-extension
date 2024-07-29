@@ -14,11 +14,11 @@ concurrency:
 jobs:
   duckdb-stable-build:
     name: Build extension binaries
-    #uses: duckdb/extension-ci-tools/.github/workflows/_extension_distribution.yml@v1.0.0
-    uses: discretizer/extension-ci-tools/.github/workflows/_extension_distribution.yml@patch-1
+    uses: duckdb/extension-ci-tools/.github/workflows/_extension_distribution.yml@main
     with:
       duckdb_version: v1.0.0
       extension_name: ros
+      vcpkg_commit: 67cc1677c3bf5c23ea14b9d2416c7422fdeac492
 
   duckdb-stable-deploy:
     name: Deploy extension binaries
